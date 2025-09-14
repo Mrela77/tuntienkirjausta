@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tuntikirjaus</title>
+<style>
+  :root{ --blue:#0A66FF; --black:#000; --line:#e5e7eb; }
+  *{ box-sizing:border-box }
+  body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica; background:#fff; color:#111; }
+  header{ display:flex; align-items:center; gap:10px; background:var(--blue); color:#fff; padding:14px 16px; }
+  header .brand{ font-size:20px; font-weight:800; text-shadow:1px 1px var(--black) }
+  header .company{ margin-left:auto; font-weight:700; text-shadow:1px 1px var(--black) }
+  .wrap{ padding:18px; max-width:980px; margin:0 auto; }
+
+  .card{ border:1px solid var(--black); border-radius:16px; padding:16px; background:#fff; }
+  .row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .row-3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+  .row-2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:640px){ .row, .row-3, .row-2{ grid-template-columns:1fr; } }
+
+  label{ display:block; margin:6px 0 6px; font-weight:700; }
+  input,select,textarea,button{ width:100%; border:1px solid var(--black); border-radius:12px; padding:12px; font-size:16px; background:#fff; }
+  input[type="date"]{ padding:10px 12px }
+  .btnrow{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px }
+  .btn{ padding:12px 14px; font-weight:800; border-radius:12px; cursor:pointer; border:1px solid var(--black) }
+  .primary{ background:var(--blue); color:#fff; text-shadow:1px 1px var(--black) }
+  .secondary{ background:#F4F6FA; color:#0A66FF }
+  .danger{ background:#fff0f0; color:#b00020; border-color:#b00020 }
+
+  .muted{ color:#6b7280; font-size:12px; margin-top:6px }
+  table{ width:100%; border-collapse:collapse; margin-top:14px; }
+  th,td{ border-bottom:1px solid #e5e7eb; padding:8px 10px; text-align:left; }
+  th{ background:#F9FAFB; color:#111; position:sticky; top:0; z-index:1 }
+  .right{ text-align:right }
+  .pill{ display:inline-block; padding:3px 10px; border:1px solid #e5e7eb; border-radius:999px; font-size:12px; }
+
+  /* Korttilista (puskuri) */
+  .row-compact td{ vertical-align:middle }
+  .km-badge{ display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #e5e7eb; font-size:12px; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">Tuntikirjaus</div>
+    <div class="company" id="companyName">Yritys</div>
+  </header>
+
+  <div class="wrap">
+    <!-- Lomake -->
+    <div class="card" id="formCard">
+      <div class="row">
+        <div>
+          <label for="date">Päivämäärä</label>
+          <input id="date" type="date">
+        </div>
+        <div>
+          <label for="customer">Asiakas</label>
+          <div style="display:flex;gap:8px">
+            <select id="customer" style="flex:1">
+              <option value="">Valitse asiakas…</option>
+            </select>
+            <button id="refreshCustomers" class="btn secondary" style="width:auto">↻</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Työntekijät + tunnit vierekkäin -->
+      <div class="row-3">
+        <div>
+          <label for="emp1">Työntekijä 1</label>
+          <select id="emp1"><option value="">Valitse…</option></select>
+        </div>
+        <div>
+          <label for="hours1">Tunnit 1</label>
+          <input id="hours1" type="number" step="0.25" inputmode="decimal" placeholder="0.00">
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <div class="pill" id="sum1">0.00 h</div>
+        </div>
+      </div>
+
+      <div class="row-3">
+        <div>
+          <label for="emp2">Työntekijä 2</label>
+          <select id="emp2"><option value="">(ei toista)</option></select>
+        </div>
+        <div>
+          <label for="hours2">Tunnit 2</label>
+          <input id="hours2" type="number" step="0.25" inputmode="decimal" placeholder="0.00">
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <div class="pill" id="sum2">0.00 h</div>
+        </div>
+      </div>
+
+      <label for="notes">Huomautus</label>
+      <textarea id="notes" rows="3" placeholder="Työn kuvaus, lisätiedot…"></textarea>
+
+      <!-- KILOMETRIT -->
+      <div class="card" style="margin-top:12px">
+        <h3 style="margin:0 0 8px 0">Kilometrit</h3>
+        <div class="row-2">
+          <div>
+            <label for="startAddr">Lähtö</label>
+            <input id="startAddr" type="text" placeholder="Osoite tai 'lat,lon'">
+          </div>
+          <div>
+            <label for="endAddr">Kohde</label>
+            <input id="endAddr" type="text" placeholder="Osoite tai 'lat,lon'">
+          </div>
+        </div>
+        <div class="btnrow" style="margin-top:8px">
+          <button class="btn secondary" id="setFromHere">Nykyinen sijainti lähtöön</button>
+          <button class="btn secondary" id="openStart">Avaa Maps (lähtö)</button>
+          <button class="btn secondary" id="openEnd">Avaa Maps (kohde)</button>
+          <button class="btn primary"   id="fetchKm" style="margin-left:auto">Hae kilometrit</button>
+        </div>
+        <div class="row-2" style="margin-top:8px;align-items:center">
+          <div>
+            <label for="km">Kilometrit</label>
+            <input id="km" type="number" step="0.1" inputmode="decimal" placeholder="0.0">
+          </div>
+          <div>
+            <div class="muted" id="kmInfo">Syötä käsin tai paina “Hae kilometrit”.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="btnrow">
+        <button class="btn primary" id="saveBtn">Tallenna puskuriin</button>
+        <button class="btn secondary" id="newBtn">Uusi tyhjä</button>
+        <button class="btn danger" id="deleteBtn" style="display:none">Poista tämä</button>
+        <span class="pill" id="editMeta" style="display:none">Muokkaustila</span>
+        <span class="pill" id="totalMeta">Yhteensä: 0.00 h</span>
+      </div>
+      <div class="muted">Tiedot tallentuvat paikallisesti avaimelle <code>tuntikirjaus_entries_v1</code>.</div>
+    </div>
+
+    <!-- Puskuri -->
+    <div class="card" id="bufferCard">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <h3 style="margin:0">Puskuri</h3>
+        <span class="pill" id="bufCount">0 riviä</span>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <input id="filterText" type="text" placeholder="Haku (asiakas/työntekijä)" style="width:220px">
+          <button class="btn secondary" id="filterBtn">Hae</button>
+          <button class="btn secondary" id="clearFilterBtn">Tyhjennä</button>
+        </div>
+      </div>
+      <div style="overflow:auto; max-height:60vh;">
+        <table id="tbl">
+          <thead>
+            <tr>
+              <th style="min-width:110px">Päivämäärä</th>
+              <th>Asiakas</th>
+              <th>Työntekijä 1</th>
+              <th class="right">Tunnit 1</th>
+              <th>Työntekijä 2</th>
+              <th class="right">Tunnit 2</th>
+              <th class="right">Yht</th>
+              <th class="right">Km</th>
+              <th>Toiminnot</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // ---- Avaimet ----
+  const LS_COMP   = 'yritys_tiedot';
+  const STORE_KEY = 'tuntikirjaus_entries_v1';
+  const REG_KEY   = 'asiakasrekisteri_lista'; // asiakkaat vain tästä
+  const EMP_KEY   = 'tyontekijat_list';       // työntekijät vain tästä
+
+  const $ = id => document.getElementById(id);
+  const pad = n => (n<10?'0':'')+n;
+  const todayStr = () => { const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
+  const num = v => (v==null||v==='') ? 0 : Number(v)||0;
+
+  // ---- Otsikko + yrityksen nimi ----
+  (function(){
+    let data={};
+    try{ data = JSON.parse(localStorage.getItem(LS_COMP)||'{}'); }catch(_){}
+    $('companyName').textContent = data && data.nimi ? data.nimi : 'Yritys';
+  })();
+
+  // ---- Util ----
+  function uniqueSorted(arr){
+    const out=[], seen=new Set();
+    (arr||[]).forEach(v=>{
+      if(v==null) return; const s=String(v).trim(); if(!s) return;
+      const k=s.toLowerCase(); if(!seen.has(k)){ seen.add(k); out.push(s); }
+    });
+    out.sort((a,b)=> a.localeCompare(b,'fi'));
+    return out;
+  }
+  function loadJSON(k,fb){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):fb; }catch(_){ return fb; } }
+
+  // ---- Asiakkaat alasvetoon (vain asiakasrekisteri_lista) ----
+  function fillCustomers(){
+    const reg = loadJSON(REG_KEY, []) || [];
+    const names = reg.map(x => (x && typeof x==='object') ? (x.nimi||x.name||'') : String(x||''));
+    const options = uniqueSorted(names).map(n => `<option>${n.replace(/</g,'&lt;')}</option>`).join('');
+    $('customer').innerHTML = `<option value="">Valitse asiakas…</option>${options}`;
+  }
+  $('refreshCustomers').addEventListener('click', fillCustomers);
+
+  // ---- Työntekijät alasvetoon (vain tyontekijat_list) ----
+  function fillEmployees(){
+    const list = uniqueSorted(loadJSON(EMP_KEY, []));
+    $('emp1').innerHTML = `<option value="">Valitse…</option>`+list.map(n=>`<option>${n.replace(/</g,'&lt;')}</option>`).join('');
+    $('emp2').innerHTML = `<option value="">(ei toista)</option>`+list.map(n=>`<option>${n.replace(/</g,'&lt;')}</option>`).join('');
+  }
+
+  // ---- Puskuri ----
+  function readBuf(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); }catch(_){ return []; } }
+  function writeBuf(arr){ localStorage.setItem(STORE_KEY, JSON.stringify(arr||[])); }
+  function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+  // ---- Lomake <-> entry ----
+  let currentId = null; // muokattavan rivin id (null = uusi)
+
+  function readForm(){
+    return {
+      id: currentId || uid(),
+      date: $('date').value || todayStr(),
+      customer: $('customer').value.trim(),
+      emp1: $('emp1').value.trim(),
+      hours1: num($('hours1').value),
+      emp2: $('emp2').value.trim(),
+      hours2: num($('hours2').value),
+      notes: $('notes').value.trim(),
+      km: num($('km').value) || 0,
+      startAddr: $('startAddr').value.trim(),
+      endAddr: $('endAddr').value.trim()
+    };
+  }
+  function fillForm(e){
+    currentId = e?.id || null;
+    $('date').value    = e?.date || todayStr();
+    $('customer').value= e?.customer || '';
+    $('emp1').value    = e?.emp1 || '';
+    $('hours1').value  = e?.hours1!=null ? e.hours1 : (e?.hours!=null ? e.hours : '');
+    $('emp2').value    = e?.emp2 || '';
+    $('hours2').value  = e?.hours2!=null ? e.hours2 : '';
+    $('notes').value   = e?.notes || '';
+    $('km').value      = e?.km!=null ? e.km : '';
+    $('startAddr').value = e?.startAddr || '';
+    $('endAddr').value   = e?.endAddr || '';
+    updateTotalsUI();
+    $('deleteBtn').style.display = currentId ? '' : 'none';
+    $('editMeta').style.display  = currentId ? '' : 'none';
+    $('saveBtn').textContent     = currentId ? 'Päivitä puskuriin' : 'Tallenna puskuriin';
+  }
+
+  function loadToForm(id){
+    const it = readBuf().find(x=>x.id===id);
+    if(!it){ alert('Riviä ei löytynyt.'); return; }
+    fillForm(it);
+    document.getElementById('formCard').scrollIntoView({behavior:'smooth', block:'start'});
+  }
+
+  function delFromBuf(id){
+    if(!confirm('Poistetaanko merkintä puskurista?')) return;
+    const arr = readBuf().filter(x=>x.id!==id);
+    writeBuf(arr);
+    if(currentId===id){ newForm(); }
+    renderBuffer();
+  }
+
+  function saveOrUpdate(){
+    const entry = readForm();
+    const arr = readBuf();
+    const i = arr.findIndex(x=>x.id===entry.id);
+    if(i>=0) arr[i]=entry; else arr.push(entry);
+    writeBuf(arr);
+    renderBuffer();
+    fillForm(entry);
+  }
+
+  function newForm(){
+    currentId = null;
+    fillForm(null);
+  }
+
+  // ---- Summat UI ----
+  function updateTotalsUI(){
+    const h1 = num($('hours1').value), h2 = num($('hours2').value);
+    $('sum1').textContent = `${h1.toFixed(2)} h`;
+    $('sum2').textContent = `${h2.toFixed(2)} h`;
+    $('totalMeta').textContent = `Yhteensä: ${(h1+h2).toFixed(2)} h`;
+  }
+  $('hours1').addEventListener('input', updateTotalsUI);
+  $('hours2').addEventListener('input', updateTotalsUI);
+
+  // ---- Haku / Tyhjennys (puskuri) ----
+  function renderBuffer(){
+    const q = $('filterText').value.trim().toLowerCase();
+    const items = readBuf().slice().sort((a,b)=> String(a.date).localeCompare(String(b.date)));
+    const filtered = q ? items.filter(it=>{
+      const hay = [it.customer||'', it.emp1||'', it.emp2||''].join(' ').toLowerCase();
+      return hay.includes(q);
+    }) : items;
+
+    const tb = $('tbl').querySelector('tbody');
+    tb.innerHTML = '';
+    let sum=0;
+    filtered.forEach(it=>{
+      const h1 = num(it.hours1!=null ? it.hours1 : it.hours);
+      const h2 = num(it.hours2);
+      const tot= h1+h2;
+      sum += tot;
+      const tr = document.createElement('tr');
+      tr.className='row-compact';
+      tr.innerHTML = `
+        <td>${(it.date||'').replace(/</g,'&lt;')}</td>
+        <td><div style="font-weight:800">${(it.customer||'').replace(/</g,'&lt;')}</div>${it.notes?`<div class="muted">${String(it.notes).replace(/</g,'&lt;')}</div>`:''}</td>
+        <td>${(it.emp1||'').replace(/</g,'&lt;')}</td>
+        <td class="right">${h1 ? h1.toFixed(2) : ''}</td>
+        <td>${(it.emp2||'').replace(/</g,'&lt;')}</td>
+        <td class="right">${h2 ? h2.toFixed(2) : ''}</td>
+        <td class="right">${tot ? tot.toFixed(2) : ''}</td>
+        <td class="right">${it.km?`<span class="km-badge">${Number(it.km).toFixed(1)} km</span>`:''}</td>
+        <td>
+          <button class="btn secondary" data-act="edit" data-id="${it.id}">Muokkaa</button>
+          <button class="btn danger" data-act="del" data-id="${it.id}">Poista</button>
+        </td>`;
+      tb.appendChild(tr);
+    });
+    $('bufCount').textContent = `${filtered.length} riviä, yht ${sum.toFixed(2)} h`;
+  }
+
+  $('tbl').addEventListener('click', (e)=>{
+    const id = e.target?.dataset?.id;
+    if(!id) return;
+    if(e.target.dataset.act==='edit') loadToForm(id);
+    if(e.target.dataset.act==='del')  delFromBuf(id);
+  });
+
+  // ---- Kilometrit: apurit ----
+  function parseLatLon(s){
+    // hyväksyy "lat,lon" tai "lat lon"
+    if(!s) return null;
+    const m = String(s).trim().replace(/\s+/g,' ').replace(',', ' ').split(' ');
+    if(m.length===2){
+      const lat = Number(m[0]), lon = Number(m[1]);
+      if(isFinite(lat)&&isFinite(lon)) return {lat,lon};
+    }
+    return null;
+  }
+  function haversineKm(a,b){
+    function toRad(x){ return x*Math.PI/180; }
+    const R=6371, dLat=toRad(b.lat-a.lat), dLon=toRad(b.lon-a.lon);
+    const s1=Math.sin(dLat/2), s2=Math.sin(dLon/2);
+    const aa=s1*s1 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*s2*s2;
+    const c=2*Math.atan2(Math.sqrt(aa),Math.sqrt(1-aa));
+    return R*c;
+  }
+  function openMapsPlace(q){
+    if(!q) return;
+    const url = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q);
+    window.open(url,'_blank','noopener');
+  }
+  function openMapsDir(from,to){
+    if(!from || !to) return;
+    const url = 'https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(from) + '&destination=' + encodeURIComponent(to) + '&travelmode=driving';
+    window.open(url,'_blank','noopener');
+  }
+
+  // Geolokaatio → lähtö
+  $('setFromHere').addEventListener('click', ()=>{
+    if(!navigator.geolocation){ alert('Sijaintia ei tueta tässä laitteessa.'); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos=>{
+        const {latitude,longitude}=pos.coords;
+        $('startAddr').value = latitude.toFixed(6)+','+longitude.toFixed(6);
+      },
+      err=>{ alert('Sijainnin haku epäonnistui: '+(err && err.message || err)); },
+      { enableHighAccuracy:true, timeout:10000, maximumAge:60000 }
+    );
+  });
+
+  // Avaa Maps
+  $('openStart').addEventListener('click', ()=> openMapsPlace($('startAddr').value || $('customer').value));
+  $('openEnd').addEventListener('click', ()=> {
+    const c = $('customer').value.trim();
+    openMapsPlace($('endAddr').value || c);
+  });
+
+  // Hae kilometrit: OSRM → fallback Haversine → avaa ohjeet
+  $('fetchKm').addEventListener('click', async ()=>{
+    const sRaw=$('startAddr').value.trim();
+    const eRaw=$('endAddr').value.trim();
+    const info=$('kmInfo');
+
+    if(!sRaw || !eRaw){ alert('Anna sekä lähtö että kohde. Voit käyttää muotoa "lat,lon" tai osoitetta (osoitteelle parempi avata ensin Maps ja kopioida koordinaatit).'); return; }
+
+    // Ensisijaisesti yritetään koordinaatteja
+    const sLL=parseLatLon(sRaw);
+    const eLL=parseLatLon(eRaw);
+
+    if(sLL && eLL){
+      try{
+        // OSRM public API (CORS ok)
+        const url=`https://router.project-osrm.org/route/v1/driving/${sLL.lon},${sLL.lat};${eLL.lon},${eLL.lat}?overview=false&alternatives=false&steps=false`;
+        info.textContent='Haetaan reittiä…';
+        const r=await fetch(url,{cache:'no-store'});
+        if(r.ok){
+          const j=await r.json();
+          const m = j && j.routes && j.routes[0] && j.routes[0].distance; // metreinä
+          if(typeof m==='number' && isFinite(m)){
+            const km = m/1000;
+            $('km').value = km.toFixed(1);
+            info.textContent = `Reitti: ${km.toFixed(1)} km (OSRM)`;
+            return;
+          }
+        }
+        // jos ei tullut kelvollista vastausta → fallback
+        const hv = haversineKm(sLL,eLL);
+        $('km').value = hv.toFixed(1);
+        info.textContent = `Arvio (suora viiva): ${hv.toFixed(1)} km. Voit tarkentaa avaamalla reitin Mapsiin.`;
+        openMapsDir(sRaw,eRaw);
+      }catch(_){
+        const hv = haversineKm(sLL,eLL);
+        $('km').value = hv.toFixed(1);
+        info.textContent = `Arvio (suora viiva): ${hv.toFixed(1)} km. Voit tarkentaa avaamalla reitin Mapsiin.`;
+        openMapsDir(sRaw,eRaw);
+      }
+      return;
+    }
+
+    // Jos syötetty on osoitteita eikä koordinaatteja → avaa suoraan reittiohjeet
+    info.textContent='Avaa reitti Google Mapsissa, katso km ja syötä kenttään.';
+    openMapsDir(sRaw,eRaw);
+  });
+
+  // ---- Hookit ----
+  $('saveBtn').addEventListener('click', saveOrUpdate);
+  $('newBtn').addEventListener('click', newForm);
+  $('deleteBtn').addEventListener('click', ()=>{ if(currentId) delFromBuf(currentId); });
+  $('filterBtn').addEventListener('click', renderBuffer);
+  $('clearFilterBtn').addEventListener('click', ()=>{ $('filterText').value=''; renderBuffer(); });
+
+  // ---- Init ----
+  $('date').value = todayStr();
+  fillCustomers();
+  fillEmployees();
+  newForm();
+  renderBuffer();
+})();
+</script>
+
+<!-- SULJE-nappi -->
+<script>
+(function(){
+  const HOME = 'yritys.html';
+  function safeClose(){
+    const isStandalone=(window.matchMedia&&(window.matchMedia('(display-mode: standalone)').matches||window.matchMedia('(display-mode: minimal-ui)').matches));
+    if(window.opener||window.name||isStandalone){ try{window.close();return;}catch(_){ } }
+    if(history.length>1){ history.back(); return; }
+    const base = location.href.slice(0, location.href.lastIndexOf('/') + 1);
+    location.href = base + HOME;
+  }
+  const btn=document.createElement('button');
+  btn.textContent='Sulje';
+  btn.className='btn secondary';
+  btn.style='width:100%;margin:12px 0';
+  (document.querySelector('.wrap')||document.body).appendChild(btn);
+  btn.addEventListener('click', safeClose);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Raportit</title>
+<style>
+  :root{ --blue:#0A66FF; --black:#000; }
+  *{ box-sizing:border-box }
+  body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica; background:#fff; color:#111; }
+  header{ display:flex; align-items:center; gap:10px; background:var(--blue); color:#fff; padding:14px 16px; }
+  header .brand{ font-size:20px; font-weight:800; text-shadow:1px 1px var(--black) }
+  header .company{ margin-left:auto; font-weight:700; text-shadow:1px 1px var(--black) }
+  .wrap{ padding:18px; max-width:980px; margin:0 auto; }
+  .card{ border:1px solid var(--black); border-radius:16px; padding:16px; background:#fff; }
+  .row{ display:grid; grid-template-columns:repeat(6,1fr); gap:10px; }
+  @media (max-width:960px){ .row{ grid-template-columns:1fr 1fr; } }
+  label{ display:block; margin:6px 0 6px; color:var(--blue); font-weight:700; text-shadow:1px 1px var(--black) }
+  input,select,button{ width:100%; border:1px solid var(--black); border-radius:12px; padding:12px; font-size:16px; background:#fff; }
+  input[type="date"]{ padding:10px 12px }
+  .btns{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px }
+  .btn{ padding:12px 14px; font-weight:800; border-radius:12px; cursor:pointer; }
+  .primary{ background:var(--blue); color:#fff; text-shadow:1px 1px var(--black) }
+  .secondary{ background:#F4F6FA; color:var(--blue) }
+  .muted{ color:#6b7280; font-size:12px; margin-top:6px }
+  table{ width:100%; border-collapse:collapse; margin-top:14px; }
+  th,td{ border-bottom:1px solid #e5e7eb; padding:8px 10px; text-align:left; }
+  th{ background:#F9FAFB; color:#111; position:sticky; top:0; z-index:1 }
+  tfoot td{ font-weight:700; }
+  .right{ text-align:right }
+  .pill{ display:inline-block; padding:3px 10px; border:1px solid #e5e7eb; border-radius:999px; font-size:12px; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">Raportit</div>
+    <div class="company" id="companyName">Yritys</div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="row">
+        <div>
+          <label for="from">Alkaen</label>
+          <input id="from" type="date">
+        </div>
+        <div>
+          <label for="to">Päättyen</label>
+          <input id="to" type="date">
+        </div>
+        <div>
+          <label for="customer">Asiakas</label>
+          <select id="customer">
+            <option value="">(kaikki)</option>
+          </select>
+        </div>
+        <div>
+          <label for="employee">Työntekijä</label>
+          <select id="employee">
+            <option value="">(kaikki)</option>
+          </select>
+        </div>
+        <div>
+          <label for="query">Haku (asiakas/työntekijä)</label>
+          <input id="query" type="text" placeholder="Kirjoita hakusana">
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input id="onlyNew" type="checkbox" style="width:auto">
+            <span>Vain viemättömät</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="btns">
+        <button class="btn secondary" id="applyBtn">Päivitä</button>
+        <button class="btn secondary" id="clearBtn">Tyhjennä</button>
+        <span class="pill" id="meta">0 riviä</span>
+        <span class="pill" id="sum">Yhteensä: 0.00 h</span>
+        <button class="btn secondary" id="exportBtn" style="margin-left:auto">Vie suodatettu Raportti.xlsx</button>
+      </div>
+
+      <div class="muted">Lähde: paikallinen puskuri (tuntikirjaus_entries_v1). Rivillä “Yhteensä” = Tunnit1 + Tunnit2.</div>
+
+      <div style="overflow:auto; max-height:70vh;">
+        <table id="tbl">
+          <thead>
+            <tr>
+              <th>Päivämäärä</th>
+              <th>Asiakas</th>
+              <th>Työntekijä1</th>
+              <th class="right">Tunnit1</th>
+              <th>Työntekijä2</th>
+              <th class="right">Tunnit2</th>
+              <th class="right">Yhteensä</th>
+              <th>Viety</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3">Summa</td>
+              <td class="right" id="sumH1">0.00</td>
+              <td></td>
+              <td class="right" id="sumH2">0.00</td>
+              <td class="right" id="sumTot">0.00</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // ---- Avaimet (yhtenevät tuntikirjaus.html:n kanssa) ----
+  const LS_COMP   = 'yritys_tiedot';
+  const STORE_KEY = 'tuntikirjaus_entries_v1';
+  const REG_KEY   = 'asiakasrekisteri_lista'; // asiakkaat
+  const EMP_KEY   = 'tyontekijat_list';       // työntekijät
+
+  const $ = id => document.getElementById(id);
+  const pad = n => (n<10?'0':'')+n;
+  const todayStr = () => { const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
+
+  // Otsikon yritysnimi
+  (function(){
+    let data={};
+    try{ data = JSON.parse(localStorage.getItem(LS_COMP)||'{}'); }catch(_){}
+    $('companyName').textContent = data && data.nimi ? data.nimi : 'Yritys';
+  })();
+
+  // ---- Apurit ----
+  function loadJSON(key, fallback){
+    try{ const v = localStorage.getItem(key); return v?JSON.parse(v):fallback; }catch(_){ return fallback; }
+  }
+  function uniqueSorted(arr){
+    const out=[], seen=new Set();
+    (arr||[]).forEach(v=>{
+      if(v==null) return;
+      const s=String(v).trim(); if(!s) return;
+      const k=s.toLowerCase();
+      if(!seen.has(k)){ seen.add(k); out.push(s); }
+    });
+    out.sort((a,b)=> a.localeCompare(b, 'fi'));
+    return out;
+  }
+  function num(v){ return (v==null||v==='') ? 0 : Number(v)||0; }
+
+  // ---- Pudotusvalikot (vain määritellyistä avaimista) ----
+  function fillFilters(){
+    const custReg = loadJSON(REG_KEY, []) || [];
+    const empReg  = loadJSON(EMP_KEY, []) || [];
+
+    const customers = uniqueSorted(custReg.map(x => (x && typeof x==='object') ? (x.nimi||x.name||'') : String(x||'')));
+    const employees = uniqueSorted(empReg);
+
+    $('customer').innerHTML = '<option value="">(kaikki)</option>' + customers.map(c=>`<option>${c.replace(/</g,'&lt;')}</option>`).join('');
+    $('employee').innerHTML = '<option value="">(kaikki)</option>' + employees.map(e=>`<option>${e.replace(/</g,'&lt;')}</option>`).join('');
+  }
+
+  // ---- Suodatus ----
+  function passesFilters(it){
+    const f = $('from').value, t = $('to').value;
+    const cust = $('customer').value.trim().toLowerCase();
+    const emp  = $('employee').value.trim().toLowerCase();
+    const q    = $('query').value.trim().toLowerCase();
+    const onlyNew = $('onlyNew').checked;
+
+    if(f && String(it.date) < f) return false;
+    if(t && String(it.date) > t) return false;
+
+    if(cust && String(it.customer||'').toLowerCase() !== cust) return false;
+
+    if(emp){
+      const e1=String(it.emp1||'').toLowerCase(), e2=String(it.emp2||'').toLowerCase();
+      if(emp!==e1 && emp!==e2) return false;
+    }
+
+    if(q){
+      const hay = [it.customer||'', it.emp1||'', it.emp2||''].join(' ').toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+
+    if(onlyNew && !!it.exported_at) return false;
+
+    return true;
+  }
+
+  // ---- Renderöinti ----
+  function render(){
+    const items = (loadJSON(STORE_KEY, [])||[]).slice().sort((a,b)=> String(a.date).localeCompare(String(b.date)));
+    const filtered = items.filter(passesFilters);
+
+    const tbody = $('tbl').querySelector('tbody');
+    tbody.innerHTML = '';
+
+    let sumH1=0, sumH2=0, sumTot=0;
+
+    filtered.forEach(it=>{
+      const h1 = num(it.hours1!=null ? it.hours1 : it.hours); // tuki vanhalle kentälle "hours"
+      const h2 = num(it.hours2);
+      const tot = h1 + h2;
+
+      sumH1 += h1; sumH2 += h2; sumTot += tot;
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${(it.date||'').replace(/</g,'&lt;')}</td>
+        <td>${(it.customer||'').replace(/</g,'&lt;')}</td>
+        <td>${(it.emp1||'').replace(/</g,'&lt;')}</td>
+        <td class="right">${h1 ? h1.toFixed(2) : ''}</td>
+        <td>${(it.emp2||'').replace(/</g,'&lt;')}</td>
+        <td class="right">${h2 ? h2.toFixed(2) : ''}</td>
+        <td class="right">${tot ? tot.toFixed(2) : ''}</td>
+        <td>${it.exported_at ? String(it.exported_at).replace(/</g,'&lt;') : ''}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    $('meta').textContent = filtered.length + ' riviä';
+    $('sum').textContent  = 'Yhteensä: ' + sumTot.toFixed(2) + ' h';
+    $('sumH1').textContent = sumH1.toFixed(2);
+    $('sumH2').textContent = sumH2.toFixed(2);
+    $('sumTot').textContent= sumTot.toFixed(2);
+  }
+
+  // ---- XLSX-vienti suodatetusta näkymästä ----
+  function xmlEscape(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;'); }
+  function utf8enc(str){ if(window.TextEncoder){ return new TextEncoder().encode(str); } var out=[],i,c; for(i=0;i<str.length;i++){ c=str.charCodeAt(i); if(c<128) out.push(c); else if(c<2048){ out.push(192|(c>>6),128|(c&63)); } else if((c&0xFC00)==0xD800&&i+1<str.length&&(str.charCodeAt(i+1)&0xFC00)==0xDC00){ c=0x10000+((c&0x3FF)<<10)+(str.charCodeAt(++i)&0x3FF); out.push(240|(c>>18),128|((c>>12)&63),128|((c>>6)&63),128|(c&63)); } else { out.push(224|(c>>12),128|((c>>6)&63),128|(c&63)); } } return new Uint8Array(out); }
+  function u16le(n){ return new Uint8Array([n&255,(n>>8)&255]); }
+  function u32le(n){ return new Uint8Array([n&255,(n>>8)&255,(n>>16)&255,(n>>24)&255]); }
+  var CRC_TABLE=(function(){var t=[],i,k,c;for(i=0;i<256;i++){c=i;for(k=0;k<8;k++){c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);}t[i]=c>>>0;}return t;})();
+  function crc32(bytes){ var c=~0>>>0,i; for(i=0;i<bytes.length;i++){ c=(c>>>8)^CRC_TABLE[(c^bytes[i])&255]; } return (~c)>>>0; }
+  function dosTimeDate(d){ var t=d||new Date(); var time=((t.getHours()<<11)|(t.getMinutes()<<5)|((t.getSeconds()/2)|0))>>>0; var date=(((t.getFullYear()-1980)<<9)|((t.getMonth()+1)<<5)|t.getDate())>>>0; return {time:time,date:date}; }
+  function concat(arrs){ var len=0,i; for(i=0;i<arrs.length;i++) len+=arrs[i].length; var out=new Uint8Array(len),off=0; for(i=0;i<arrs.length;i++){ out.set(arrs[i],off); off+=arrs[i].length; } return out; }
+  function makeZip(files){ var chunks=[],central=[],offset=0,dd=dosTimeDate(new Date()),i; 
+    for(i=0;i<files.length;i++){
+      var nameBytes=utf8enc(files[i].name);
+      var data=files[i].data;
+      var crc=crc32(data);
+      var comp=data;
+      var local=concat([ u32le(0x04034b50), u16le(20), u16le(0), u16le(0), u16le(dd.time), u16le(dd.date), u32le(crc), u32le(comp.length>>>0), u32le(data.length>>>0), u16le(nameBytes.length), u16le(0), nameBytes, comp ]);
+      chunks.push(local);
+      var centralHdr=concat([ u32le(0x02014b50), u16le(20), u16le(20), u16le(0), u16le(0), u16le(dd.time), u16le(dd.date), u32le(crc), u32le(comp.length>>>0), u32le(data.length>>>0), u16le(nameBytes.length), u16le(0), u16le(0), u16le(0), u16le(0), u32le(0), u32le(offset>>>0), nameBytes ]);
+      central.push(centralHdr);
+      offset += local.length;
+    }
+    var centralBlob=concat(central);
+    var partsBlob=concat(chunks);
+    var end=concat([ u32le(0x06054b50), u16le(0), u16le(0), u16le(files.length), u16le(files.length), u32le(centralBlob.length>>>0), u32le(partsBlob.length>>>0), u16le(0) ]);
+    return concat([ partsBlob, centralBlob, end ]);
+  }
+  function colLetters(n){ var s=''; n++; while(n>0){ var m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
+  function buildSheetXml(matrix){
+    var rows=[],r,c,cells,v,ref;
+    for(r=0;r<matrix.length;r++){
+      cells=[];
+      for(c=0;c<matrix[r].length;c++){
+        v=matrix[r][c]; ref=colLetters(c)+(r+1);
+        if(v===null||v===undefined||v===''){ continue; }
+        if(typeof v==='number'){ cells.push('<c r="'+ref+'"><v>'+String(v)+'</v></c>'); }
+        else { cells.push('<c r="'+ref+'" t="inlineStr"><is><t>'+xmlEscape(String(v))+'</t></is></c>'); }
+      }
+      rows.push('<row r="'+(r+1)+'">'+cells.join('')+'</row>');
+    }
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'+rows.join('')+'</sheetData></worksheet>';
+  }
+  function buildWorkbookXml(sheetName){ return '<?xml version="1.0" encoding="UTF-8"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="'+xmlEscape(sheetName)+'" sheetId="1" r:id="rId1"/></sheets></workbook>'; }
+  function buildWorkbookRels(){ return '<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'; }
+  function buildRootRels(){ return '<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'; }
+  function buildContentTypes(){ return '<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'; }
+
+  function exportFilteredXlsx(){
+    const rows = [['Päivämäärä','Asiakas','Työntekijä1','Tunnit1','Työntekijä2','Tunnit2','Yhteensä','Viety']];
+    const items = (loadJSON(STORE_KEY, [])||[]).slice().sort((a,b)=> String(a.date).localeCompare(String(b.date)));
+    const filtered = items.filter(passesFilters);
+    filtered.forEach(it=>{
+      const h1 = (it.hours1!=null ? Number(it.hours1) : (it.hours!=null?Number(it.hours):0)) || 0;
+      const h2 = (it.hours2!=null ? Number(it.hours2) : 0) || 0;
+      rows.push([
+        String(it.date||''),
+        String(it.customer||''),
+        String(it.emp1||''),
+        h1 ? Number(h1) : '',
+        String(it.emp2||''),
+        h2 ? Number(h2) : '',
+        (h1+h2) ? Number(h1+h2) : '',
+        it.exported_at ? String(it.exported_at) : ''
+      ]);
+    });
+
+    const files = [
+      {name:'[Content_Types].xml', data:utf8enc(buildContentTypes())},
+      {name:'_rels/.rels', data:utf8enc(buildRootRels())},
+      {name:'xl/workbook.xml', data:utf8enc(buildWorkbookXml('Raportti'))},
+      {name:'xl/_rels/workbook.xml.rels', data:utf8enc(buildWorkbookRels())},
+      {name:'xl/worksheets/sheet1.xml', data:utf8enc(buildSheetXml(rows))}
+    ];
+    const zip = makeZip(files);
+    const blob = new Blob([zip], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+
+    (async ()=>{
+      try{
+        if('showSaveFilePicker' in window){
+          const handle = await window.showSaveFilePicker({
+            suggestedName:'Raportti.xlsx',
+            types:[{description:'Excel', accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']}}]
+          });
+          const w = await handle.createWritable();
+          await w.write(blob); await w.close();
+          return;
+        }
+      }catch(_){}
+      const a=document.createElement('a'), url=URL.createObjectURL(blob);
+      a.href=url; a.download='Raportti.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1500);
+    })();
+  }
+
+  // ---- Hookit ----
+  $('applyBtn').addEventListener('click', render);
+  $('clearBtn').addEventListener('click', ()=>{
+    $('from').value=''; $('to').value=''; $('customer').value=''; $('employee').value='';
+    $('onlyNew').checked=false; $('query').value='';
+    render();
+  });
+  $('exportBtn').addEventListener('click', exportFilteredXlsx);
+
+  // Init
+  $('to').value = todayStr();
+  fillFilters();
+  render();
+})();
+</script>
+
+<!-- SULJE-nappi -->
+<script>
+(function(){
+  const HOME = 'yritys.html';
+  const btn=document.createElement('button');
+  btn.textContent='Sulje';
+  btn.className='btn secondary';
+  btn.style='width:100%;margin:12px 18px';
+  document.body.appendChild(btn);
+  btn.addEventListener('click', ()=>{
+    const base = location.href.slice(0, location.href.lastIndexOf('/') + 1);
+    location.href = base + HOME;
+  });
+})();
+</script>
+</body>
+</html>

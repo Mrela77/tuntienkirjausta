@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PDF → Excel -muunnin</title>
+<style>
+  :root{ --blue:#0A66FF; --black:#000; }
+  *{ box-sizing:border-box }
+  body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica; background:#fff; color:#111; }
+  header{ display:flex; align-items:center; gap:10px; background:var(--blue); color:#fff; padding:14px 16px; }
+  header .brand{ font-size:20px; font-weight:800; text-shadow:1px 1px var(--black) }
+  .wrap{ padding:18px; max-width:800px; margin:0 auto; }
+  .card{ border:1px solid var(--black); border-radius:16px; padding:16px; background:#fff; margin-bottom:16px }
+  label{ display:block; margin:6px 0; font-weight:700; }
+  input,button{ border:1px solid var(--black); border-radius:12px; padding:12px; font-size:16px; }
+  input[type="file"]{ padding:6px }
+  .btn{ cursor:pointer; font-weight:800; }
+  .primary{ background:var(--blue); color:#fff; text-shadow:1px 1px var(--black) }
+  .secondary{ background:#F4F6FA; color:var(--blue) }
+  textarea{ width:100%; border:1px solid #ccc; border-radius:8px; padding:8px; min-height:120px }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">PDF → Excel -muunnin</div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <label for="pdfFiles">Valitse PDF-tiedostot</label>
+      <input id="pdfFiles" type="file" accept="application/pdf" multiple>
+      <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap">
+        <button class="btn primary" id="convertBtn">Muunna</button>
+        <button class="btn secondary" id="clearBtn">Tyhjennä valinta</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <label>Esikatselu / raakateksti</label>
+      <textarea id="output"></textarea>
+    </div>
+  </div>
+
+<!-- ✅ Toimiva PDF.js kirjasto (vanhempi stable-versio) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js"></script>
+
+<script>
+(async function(){
+  const $ = id => document.getElementById(id);
+  const fileInput = $('pdfFiles');
+  const out = $('output');
+
+  async function extractText(file){
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    let text = "";
+    for(let p=1; p<=pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      text += content.items.map(i=>i.str).join(" ") + "\n";
+    }
+    return text;
+  }
+
+  $('convertBtn').addEventListener('click', async ()=>{
+    if(!fileInput.files.length){ alert("Valitse PDF ensin"); return; }
+    out.value = "Käsitellään...";
+    let allText="";
+    for(const f of fileInput.files){
+      try{
+        const t = await extractText(f);
+        allText += `--- ${f.name} ---\n`+t+"\n";
+      }catch(err){
+        allText += `*** Virhe ${f.name}: ${err.message}\n`;
+      }
+    }
+    out.value = allText;
+  });
+
+  $('clearBtn').addEventListener('click', ()=>{
+    fileInput.value="";
+    out.value="";
+  });
+})();
+</script>
+
+</body>
+</html>

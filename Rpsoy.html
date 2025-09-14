@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RPS OY – Pika-aloitus</title>
+<style>
+  :root{ --blue:#0A66FF; --black:#000; }
+  *{ box-sizing:border-box }
+  body{ margin:0; padding:20px; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica; background:#fff; color:#111; }
+  h1{ margin:0 0 16px; font-size:26px; color:var(--blue); text-shadow:1px 1px var(--black); }
+  .wrap{ max-width:560px; margin:0 auto; }
+  .btn{ width:100%; padding:16px; margin:10px 0; font-size:18px; font-weight:700;
+        border-radius:14px; border:1px solid var(--black); cursor:pointer;
+        background:var(--blue); color:#fff; text-shadow:1px 1px var(--black); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>RPS OY</h1>
+
+    <button class="btn" id="openHoursBtn">Tuntikirjaus</button>
+    <button class="btn" id="openTripsBtn">Kilometrit</button>
+    <button class="btn" id="openTimeBtn">Aikakirjaus</button>
+    <button class="btn" id="openServerBtn">Simple HTTP Server</button>
+  </div>
+
+<script>
+  // Avaa saman kansion HTML-tiedostot uuteen välilehteen
+  function openSiblingNewTab(fileName){
+    try{
+      const href = String(location.href);
+      const base = href.slice(0, href.lastIndexOf('/') + 1);
+      window.open(base + fileName, '_blank');
+    }catch(_){
+      window.open(fileName, '_blank');
+    }
+  }
+
+  document.getElementById('openHoursBtn').addEventListener('click', () => {
+    openSiblingNewTab('Tuntikirjaus.html');
+  });
+  document.getElementById('openTripsBtn').addEventListener('click', () => {
+    openSiblingNewTab('Kilometrit3.html');
+  });
+  document.getElementById('openTimeBtn').addEventListener('click', () => {
+    openSiblingNewTab('Aikakirjaus.html');
+  });
+
+  // Avaa Simple HTTP Server Plus / perus (Play-kauppa varalle)
+  (function(){
+    const PKGS = ['com.phlox.simpleserver.plus','com.phlox.simpleserver'];
+    function openApp(pkg){
+      try{
+        location.href = `intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${pkg};end`;
+        setTimeout(() => {
+          if (document.visibilityState === 'visible') {
+            try { location.href = `intent://open/#Intent;package=${pkg};end`; } catch(e){}
+            setTimeout(() => {
+              if (document.visibilityState === 'visible') {
+                try { location.href = `market://details?id=${pkg}`; }
+                catch(_) { location.href = `https://play.google.com/store/apps/details?id=${pkg}`; }
+              }
+            }, 900);
+          }
+        }, 900);
+      }catch(e){
+        try { location.href = `market://details?id=${pkg}`; }
+        catch(_) { location.href = `https://play.google.com/store/apps/details?id=${pkg}`; }
+      }
+    }
+    document.getElementById('openServerBtn').addEventListener('click', () => {
+      openApp(PKGS[0]);
+      setTimeout(() => {
+        if (document.visibilityState === 'visible') openApp(PKGS[1]);
+      }, 1800);
+    });
+  })();
+</script>
+</body>
+</html>

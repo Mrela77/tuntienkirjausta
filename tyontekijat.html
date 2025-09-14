@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<!-- Estä välimuisti -->
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+
+<title>Työntekijät</title>
+<style>
+  :root{ --blue:#0A66FF; --black:#000; }
+  *{ box-sizing:border-box }
+  body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica; background:#fff; color:#111; }
+  header{ background:var(--blue); color:#fff; padding:12px 16px; font-weight:800; text-shadow:1px 1px var(--black) }
+  .wrap{ padding:18px; max-width:720px; margin:0 auto; }
+  label{ display:block; margin:10px 0 6px; color:var(--blue); font-weight:700; text-shadow:1px 1px var(--black); }
+  input{ width:100%; border:1px solid var(--black); border-radius:12px; padding:12px; font-size:16px; background:#fff; }
+  .row{ display:grid; grid-template-columns:1fr 1fr; gap:10px }
+  @media (max-width:640px){ .row{ grid-template-columns:1fr } }
+  .btns{ display:flex; gap:10px; flex-wrap:wrap; margin-top:14px }
+  button{ flex:1 1 160px; padding:14px; font-size:16px; border-radius:12px; border:1px solid var(--black); cursor:pointer; font-weight:800 }
+  .primary{ background:var(--blue); color:#fff; text-shadow:1px 1px var(--black) }
+  .secondary{ background:#F7F7F7; color:var(--blue) }
+  .muted{ color:#6b7280; font-size:12px; margin-top:6px }
+</style>
+</head>
+<body>
+  <header>Työntekijöiden tiedot (10 paikkaa)</header>
+  <div class="wrap" id="wrap"></div>
+
+<script>
+(function(){
+  const LS="tyontekijat_list";
+  function $(id){ return document.getElementById(id); }
+
+  function render(){
+    const wrap = $('wrap');
+    const arr = JSON.parse(localStorage.getItem(LS)||'[]');
+    let rows = '';
+    for(let i=0;i<10;i++){
+      const val = (arr[i]||'').replace(/"/g,'&quot;');
+      rows += `
+        <div>
+          <label for="emp${i+1}">Työntekijä ${i+1}</label>
+          <input id="emp${i+1}" type="text" placeholder="Nimi" value="${val}">
+        </div>`;
+    }
+    wrap.innerHTML = `
+      <div class="row">${rows}</div>
+      <div class="btns" style="margin-top:12px">
+        <button class="primary" id="saveBtn">Tallenna</button>
+        <button class="secondary" id="closeBtn">Sulje</button>
+      </div>
+      <div class="muted">Nimet tallennetaan selaimen muistiin ja näkyvät valinnoissa muissa osissa.</div>`;
+    $('saveBtn').addEventListener('click', save);
+    $('closeBtn').addEventListener('click', ()=> window.close());
+  }
+
+  function save(){
+    const out = [];
+    for(let i=1;i<=10;i++){ out.push((document.getElementById('emp'+i).value||'').trim()); }
+    localStorage.setItem(LS, JSON.stringify(out));
+    alert('Tallennettu.');
+  }
+
+  render();
+})();
+</script>
+<!-- SULJE-napin yleiskoodi: lisää tämä ennen </body> -->
+<script>
+(function(){
+  // Etusivu johon palataan tarvittaessa
+  const HOME = 'yritys.html';
+
+  function safeClose(){
+    // Onko avattu app/ikkuna-tilassa tai window.open:lla?
+    const isStandalone = (window.matchMedia &&
+      (window.matchMedia('(display-mode: standalone)').matches ||
+       window.matchMedia('(display-mode: minimal-ui)').matches));
+
+    if (window.opener || window.name || isStandalone) {
+      try { window.close(); return; } catch(_) {}
+    }
+    // Onko selaushistoriaa? Palaa taakse
+    if (history.length > 1) { history.back(); return; }
+
+    // Viimeinen vaihtoehto: siirry etusivulle
+    const base = location.href.slice(0, location.href.lastIndexOf('/') + 1);
+    const url  = base + HOME + (HOME.includes('?') ? '&' : '?') + 'cb=' + Date.now();
+    location.href = url;
+  }
+
+  function attachCloseButtons(){
+    // Kiinnitä olemassa oleviin sulkunappeihin, jos niitä on:
+    const targets = document.querySelectorAll('[data-action="close"], .btn-close, #btnClose, #closeBtn');
+    if (targets.length) {
+      targets.forEach(el => el.addEventListener('click', safeClose));
+      return;
+    }
+
+    // Muussa tapauksessa LISÄÄ napin automaattisesti
+    const btn = document.createElement('button');
+    btn.textContent = 'Sulje';
+    btn.setAttribute('data-action', 'close');
+
+    // Käytä sivun omia luokkia jos ne löytyvät, muuten kevyt inlinet
+    const hasBtn = !!document.querySelector('.btn');
+    const hasSecondary = !!document.querySelector('.btn-secondary');
+    if (hasBtn) btn.classList.add('btn');
+    if (hasSecondary) btn.classList.add('btn-secondary');
+    if (!hasBtn && !hasSecondary) {
+      btn.style.cssText =
+        'width:100%;padding:12px;margin:12px 0;font-size:16px;'+
+        'border-radius:12px;border:1px solid #000;background:#F7F7F7;color:#0A66FF;font-weight:800;cursor:pointer;';
+    }
+
+    // Sijoitus: preferoi .wrap, muuten body
+    (document.querySelector('.wrap') || document.body).appendChild(btn);
+    btn.addEventListener('click', safeClose);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attachCloseButtons);
+  } else {
+    attachCloseButtons();
+  }
+})();
+</script>
+<script>
+/* ===== Portaalin teema: luku & live-päivitys (kaikki muut sivut) ===== */
+(function applySavedTheme(){
+  const THEME_KEY='portal_theme_v1';
+  function apply(vars){
+    const root=document.documentElement;
+    if(!vars) return;
+    for(const k in vars){ root.style.setProperty(k, vars[k]); }
+    root.style.setProperty('--bg',  vars['--bg']  || '#fff');
+    root.style.setProperty('--text',vars['--text']|| '#111');
+  }
+  try{
+    const saved = JSON.parse(localStorage.getItem(THEME_KEY) || 'null');
+    if(saved) apply(saved);
+  }catch(_){}
+
+  // Päivitä live, jos väri muuttuu yrityksen-tiedot-sivulla
+  window.addEventListener('storage', (e)=>{
+    if(e.key===THEME_KEY || e.key==='__theme_ping'){
+      try{ const t = JSON.parse(localStorage.getItem(THEME_KEY)||'null'); if(t) apply(t); }catch(_){}
+    }
+  });
+})();
+</script>
+</body>
+</html>

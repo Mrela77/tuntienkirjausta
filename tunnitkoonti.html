@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tuntikoonti / Vienti</title>
+<style>
+  :root{ --blue:#0A66FF; --black:#000; --line:#e5e7eb; }
+  *{ box-sizing:border-box }
+  body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica; background:#fff; color:#111; }
+  header{ display:flex; align-items:center; gap:10px; background:var(--blue); color:#fff; padding:14px 16px; }
+  header .brand{ font-size:20px; font-weight:800; text-shadow:1px 1px var(--black) }
+  header .company{ margin-left:auto; font-weight:700; text-shadow:1px 1px var(--black) }
+  .wrap{ padding:18px; max-width:980px; margin:0 auto; }
+  .card{ border:1px solid var(--black); border-radius:16px; padding:16px; background:#fff; }
+
+  label{ display:block; margin:6px 0 6px; font-weight:700; font-size:14px; }
+  input,select,button{ width:100%; border:1px solid var(--black); border-radius:12px; padding:12px; font-size:16px; background:#fff; }
+  input[type="date"]{ padding:10px 12px }
+  .btn{ padding:12px 14px; font-weight:800; border-radius:12px; cursor:pointer; border:1px solid var(--black) }
+  .primary{ background:var(--blue); color:#fff; text-shadow:1px 1px var(--black); border-color:#001c80 }
+  .secondary{ background:#F4F6FA; color:#0A66FF }
+  .danger{ background:#fff0f0; color:#b00020; border-color:#b00020 }
+
+  .row-3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  .row-2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:680px){ .row-3,.row-2{ grid-template-columns:1fr } }
+
+  .toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px }
+  .pill{ display:inline-block; padding:6px 10px; border:1px solid #e5e7eb; border-radius:999px; font-size:12px; background:#fafafa }
+
+  /* KORTTILISTA */
+  .list{ display:flex; flex-direction:column; gap:14px; margin-top:12px; }
+  .rowcard{
+    border:1px solid var(--line); border-radius:16px; padding:14px;
+    box-shadow:0 1px 0 #f0f2f5 inset;
+  }
+  .rowhead{
+    display:flex; align-items:center; gap:10px; margin-bottom:8px;
+  }
+  .date{ font-weight:900; font-size:18px; }
+  .total{ margin-left:auto; font-weight:900; color:#4b5563 }
+  .label{ color:#6b7280; font-weight:800 }
+  .grid{ display:grid; grid-template-columns:1fr auto; gap:6px 12px }
+  .actbar{ display:flex; gap:10px; margin-top:10px }
+  .chk{ transform:scale(1.3); margin-right:6px }
+
+  /* Asiakas näkyvämmäksi */
+  .customer{
+    font-weight:900;
+    font-size:20px;
+    line-height:1.2;
+    margin:4px 0 6px 0;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">Tuntikoonti / Vienti</div>
+    <div class="company" id="companyName">Yritys</div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="row-3">
+        <div>
+          <label for="from">Alkaen</label>
+          <input id="from" type="date">
+        </div>
+        <div>
+          <label for="to">Päättyen</label>
+          <input id="to" type="date">
+        </div>
+        <div>
+          <label for="query">Haku</label>
+          <input id="query" type="text" placeholder="Asiakas tai työntekijä">
+        </div>
+      </div>
+
+      <div class="row-2" style="margin-top:8px">
+        <div>
+          <label for="customer">Asiakas</label>
+          <select id="customer"><option value="">(kaikki)</option></select>
+        </div>
+        <div>
+          <label for="employee">Työntekijä</label>
+          <select id="employee"><option value="">(kaikki)</option></select>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn secondary" id="applyBtn">Päivitä</button>
+        <button class="btn secondary" id="selectAllBtn">Valitse kaikki</button>
+        <button class="btn secondary" id="clearSelBtn">Poista valinnat</button>
+        <span class="pill" id="meta">0 riviä</span>
+        <span class="pill" id="sum">Yhteensä: 0.00 h</span>
+        <span class="pill" id="selCount">Valittuja: 0</span>
+        <button class="btn primary" id="exportBtn" style="margin-left:auto">Vie valitut Exceliin</button>
+      </div>
+
+      <!-- KORTIT -->
+      <div id="list" class="list"></div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const LS_COMP   = 'yritys_tiedot';
+  const STORE_KEY = 'tuntikirjaus_entries_v1';
+  const REG_KEY   = 'asiakasrekisteri_lista';
+  const EMP_KEY   = 'tyontekijat_list';
+
+  const $ = id => document.getElementById(id);
+  const pad = n => (n<10?'0':'')+n;
+  const todayStr = () => { const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
+  const num = v => (v==null||v==='') ? 0 : Number(v)||0;
+
+  // Otsikko
+  (function(){
+    let data={};
+    try{ data = JSON.parse(localStorage.getItem(LS_COMP)||'{}'); }catch(_){}
+    $('companyName').textContent = data && data.nimi ? data.nimi : 'Yritys';
+  })();
+
+  function loadJSON(k,fb){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):fb; }catch(_){ return fb; } }
+  function readBuf(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); }catch(_){ return []; } }
+  function writeBuf(arr){ localStorage.setItem(STORE_KEY, JSON.stringify(arr||[])); }
+  function uniqueSorted(arr){
+    const out=[], seen=new Set();
+    (arr||[]).forEach(v=>{
+      if(v==null) return; const s=String(v).trim(); if(!s) return;
+      const k=s.toLowerCase(); if(!seen.has(k)){ seen.add(k); out.push(s); }
+    });
+    out.sort((a,b)=> a.localeCompare(b,'fi')); return out;
+  }
+
+  // Valikot
+  function fillFilters(){
+    const items = readBuf();
+    const custList = uniqueSorted((loadJSON(REG_KEY, [])||[]).map(x=>x?.nimi||x?.name||'').concat(items.map(x=>x.customer||'')));
+    const empList  = uniqueSorted((loadJSON(EMP_KEY, [])||[]).concat(items.map(x=>x.emp1||''), items.map(x=>x.emp2||'')));
+    $('customer').innerHTML = '<option value="">(kaikki)</option>' + custList.map(c=>`<option>${c.replace(/</g,'&lt;')}</option>`).join('');
+    $('employee').innerHTML = '<option value="">(kaikki)</option>' + empList.map(e=>`<option>${e.replace(/</g,'&lt;')}</option>`).join('');
+  }
+
+  // Suodatus
+  function passes(it){
+    const f = $('from').value, t = $('to').value;
+    const cust = $('customer').value.trim().toLowerCase();
+    const emp  = $('employee').value.trim().toLowerCase();
+    const q    = $('query').value.trim().toLowerCase();
+    if(f && String(it.date) < f) return false;
+    if(t && String(it.date) > t) return false;
+    if(cust && String(it.customer||'').toLowerCase() !== cust) return false;
+    if(emp){
+      const e1=String(it.emp1||'').toLowerCase(), e2=String(it.emp2||'').toLowerCase();
+      if(emp!==e1 && emp!==e2) return false;
+    }
+    if(q){
+      const hay=[it.customer||'', it.emp1||'', it.emp2||''].join(' ').toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  }
+
+  // Render kortit
+  function render(){
+    const items = readBuf().slice().sort((a,b)=> String(a.date).localeCompare(String(b.date)));
+    const rows = items.filter(passes);
+    const cont = $('list'); cont.innerHTML='';
+
+    let sum=0;
+    rows.forEach(it=>{
+      const h1 = num(it.hours1!=null ? it.hours1 : it.hours);
+      const h2 = num(it.hours2);
+      const tot = h1 + h2; sum += tot;
+
+      const div=document.createElement('div');
+      div.className='rowcard';
+      div.innerHTML = `
+        <div class="rowhead">
+          <input type="checkbox" class="chk sel" data-id="${it.id}">
+          <div class="date">${(it.date||'').replace(/</g,'&lt;')}</div>
+          <div class="total">Yht ${tot.toFixed(2)} h</div>
+        </div>
+        <div class="customer">${(it.customer||'').replace(/</g,'&lt;')}</div>
+        <div class="grid" style="margin-top:6px">
+          <div><span class="label">Työntekijä 1</span><div>${(it.emp1||'').replace(/</g,'&lt;')}</div></div>
+          <div style="text-align:right;align-self:center">${h1?h1.toFixed(2):''} h</div>
+          <div><span class="label">Työntekijä 2</span><div>${(it.emp2||'').replace(/</g,'&lt;')}</div></div>
+          <div style="text-align:right;align-self:center">${h2?h2.toFixed(2):''} h</div>
+        </div>
+        ${it.notes?`<div style="margin-top:6px;color:#374151">${String(it.notes).replace(/</g,'&lt;')}</div>`:''}
+        <div class="actbar">
+          <button class="btn danger" data-act="del" data-id="${it.id}">Poista</button>
+        </div>
+      `;
+      cont.appendChild(div);
+    });
+
+    $('meta').textContent = rows.length + ' riviä';
+    $('sum').textContent  = 'Yhteensä: ' + sum.toFixed(2) + ' h';
+    updateSelCount();
+  }
+
+  // Valinnat
+  function updateSelCount(){
+    const n = document.querySelectorAll('.sel:checked').length;
+    $('selCount').textContent = 'Valittuja: ' + n;
+  }
+  document.addEventListener('change', (e)=>{
+    if(e.target && e.target.classList && e.target.classList.contains('sel')) updateSelCount();
+  });
+  $('selectAllBtn').addEventListener('click', ()=>{
+    document.querySelectorAll('.sel').forEach(c=> c.checked=true); updateSelCount();
+  });
+  $('clearSelBtn').addEventListener('click', ()=>{
+    document.querySelectorAll('.sel').forEach(c=> c.checked=false); updateSelCount();
+  });
+
+  // Poisto
+  document.addEventListener('click', (e)=>{
+    const t=e.target;
+    if(t && t.dataset && t.dataset.act==='del' && t.dataset.id){
+      if(!confirm('Poistetaanko merkintä puskurista?')) return;
+      const id=t.dataset.id;
+      const arr = readBuf().filter(x=>x.id!==id);
+      writeBuf(arr);
+      render();
+    }
+  });
+
+  // XLSX vienti valituista
+  function xmlEscape(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;'); }
+  function utf8enc(str){ if(window.TextEncoder){ return new TextEncoder().encode(str); } var out=[],i,c; for(i=0;i<str.length;i++){ c=str.charCodeAt(i); if(c<128) out.push(c); else if(c<2048){ out.push(192|(c>>6),128|(c&63)); } else if((c&0xFC00)==0xD800&&i+1<str.length&&(str.charCodeAt(i+1)&0xFC00)==0xDC00){ c=0x10000+((c&0x3FF)<<10)+(str.charCodeAt(++i)&0x3FF); out.push(240|(c>>18),128|((c>>12)&63),128|((c>>6)&63),128|(c&63)); } else { out.push(224|(c>>12),128|((c>>6)&63),128|(c&63)); } } return new Uint8Array(out); }
+  function u16le(n){ return new Uint8Array([n&255,(n>>8)&255]); }
+  function u32le(n){ return new Uint8Array([n&255,(n>>8)&255,(n>>16)&255,(n>>24)&255]); }
+  var CRC_TABLE=(function(){var t=[],i,k,c;for(i=0;i<256;i++){c=i;for(k=0;k<8;k++){c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);}t[i]=c>>>0;}return t;})();
+  function crc32(bytes){ var c=~0>>>0,i; for(i=0;i<bytes.length;i++){ c=(c>>>8)^CRC_TABLE[(c^bytes[i])&255]; } return (~c)>>>0; }
+  function dosTimeDate(d){ var t=d||new Date(); var time=((t.getHours()<<11)|(t.getMinutes()<<5)|((t.getSeconds()/2)|0))>>>0; var date=(((t.getFullYear()-1980)<<9)|((t.getMonth()+1)<<5)|t.getDate())>>>0; return {time:time,date:date}; }
+  function concat(arrs){ var len=0,i; for(i=0;i<arrs.length;i++) len+=arrs[i].length; var out=new Uint8Array(len),off=0; for(i=0;i<arrs.length;i++){ out.set(arrs[i],off); off+=arrs[i].length; } return out; }
+  function makeZip(files){ var chunks=[],central=[],offset=0,dd=dosTimeDate(new Date()),i;
+    for(i=0;i<files.length;i++){
+      var nameBytes=utf8enc(files[i].name);
+      var data=files[i].data;
+      var crc=crc32(data);
+      var comp=data;
+      var local=concat([ u32le(0x04034b50), u16le(20), u16le(0), u16le(0), u16le(dd.time), u16le(dd.date), u32le(crc), u32le(comp.length>>>0), u32le(data.length>>>0), u16le(nameBytes.length), u16le(0), nameBytes, comp ]);
+      chunks.push(local);
+      var centralHdr=concat([ u32le(0x02014b50), u16le(20), u16le(20), u16le(0), u16le(0), u16le(dd.time), u16le(dd.date), u32le(crc), u32le(comp.length>>>0), u32le(data.length>>>0), u16le(nameBytes.length), u16le(0), u16le(0), u16le(0), u16le(0), u32le(0), u32le(offset>>>0), nameBytes ]);
+      central.push(centralHdr);
+      offset += local.length;
+    }
+    var centralBlob=concat(central);
+    var partsBlob=concat(chunks);
+    var end=concat([ u32le(0x06054b50), u16le(0), u16le(0), u16le(files.length), u16le(files.length), u32le(centralBlob.length>>>0), u32le(partsBlob.length>>>0), u16le(0) ]);
+    return concat([ partsBlob, centralBlob, end ]);
+  }
+  function colLetters(n){ var s=''; n++; while(n>0){ var m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
+  function buildSheetXml(matrix){
+    var rows=[],r,c,cells,v,ref;
+    for(r=0;r<matrix.length;r++){
+      cells=[];
+      for(c=0;c<matrix[r].length;c++){
+        v=matrix[r][c]; ref=colLetters(c)+(r+1);
+        if(v===null||v===undefined||v===''){ continue; }
+        if(typeof v==='number'){ cells.push('<c r="'+ref+'"><v>'+String(v)+'</v></c>'); }
+        else { cells.push('<c r="'+ref+'" t="inlineStr"><is><t>'+xmlEscape(String(v))+'</t></is></c>'); }
+      }
+      rows.push('<row r="'+(r+1)+'">'+cells.join('')+'</row>');
+    }
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'+rows.join('')+'</sheetData></worksheet>';
+  }
+  function buildWorkbookXml(){ return '<?xml version="1.0" encoding="UTF-8"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Koonti" sheetId="1" r:id="rId1"/></sheets></workbook>'; }
+  function buildWorkbookRels(){ return '<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'; }
+  function buildRootRels(){ return '<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'; }
+  function buildContentTypes(){ return '<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'; }
+
+  function exportSelectedXlsx(){
+    const ids = [...document.querySelectorAll('.sel:checked')].map(c=>c.dataset.id);
+    if(ids.length===0){ alert('Valitse ensin vähintään yksi rivi.'); return; }
+    const items = readBuf().filter(x=> ids.includes(x.id)).sort((a,b)=> String(a.date).localeCompare(String(b.date)));
+    const rows=[['Päivämäärä','Asiakas','Työntekijä1','Tunnit1','Työntekijä2','Tunnit2','Yhteensä']];
+    items.forEach(it=>{
+      const h1 = (it.hours1!=null ? Number(it.hours1) : (it.hours!=null?Number(it.hours):0)) || 0;
+      const h2 = (it.hours2!=null ? Number(it.hours2) : 0) || 0;
+      rows.push([ String(it.date||''), String(it.customer||''), String(it.emp1||''), h1?Number(h1):'', String(it.emp2||''), h2?Number(h2):'', (h1+h2)?Number(h1+h2):'' ]);
+    });
+    const files = [
+      {name:'[Content_Types].xml', data:utf8enc(buildContentTypes())},
+      {name:'_rels/.rels', data:utf8enc(buildRootRels())},
+      {name:'xl/workbook.xml', data:utf8enc(buildWorkbookXml())},
+      {name:'xl/_rels/workbook.xml.rels', data:utf8enc(buildWorkbookRels())},
+      {name:'xl/worksheets/sheet1.xml', data:utf8enc(buildSheetXml(rows))}
+    ];
+    const zip = makeZip(files);
+    const blob = new Blob([zip], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    (async ()=>{
+      try{
+        if('showSaveFilePicker' in window){
+          const handle = await window.showSaveFilePicker({
+            suggestedName:'Tunnit-Koonti.xlsx',
+            types:[{description:'Excel', accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']}}]
+          });
+          const w = await handle.createWritable(); await w.write(blob); await w.close(); return;
+        }
+      }catch(_){}
+      const a=document.createElement('a'), url=URL.createObjectURL(blob);
+      a.href=url; a.download='Tunnit-Koonti.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1200);
+    })();
+  }
+
+  // Hookit
+  $('applyBtn').addEventListener('click', render);
+  $('exportBtn').addEventListener('click', exportSelectedXlsx);
+
+  // Init
+  $('to').value = todayStr();
+  fillFilters();
+  render();
+})();
+</script>
+
+<!-- SULJE -->
+<script>
+(function(){
+  const HOME='tuntikirjaus.html';
+  const btn=document.createElement('button');
+  btn.textContent='Sulje';
+  btn.className='btn secondary';
+  btn.style='width:100%;margin:12px 18px';
+  document.body.appendChild(btn);
+  btn.addEventListener('click', ()=>{
+    const base = location.href.slice(0, location.href.lastIndexOf('/') + 1);
+    location.href = base + HOME;
+  });
+})();
+</script>
+</body>
+</html>

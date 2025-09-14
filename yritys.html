@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Yritysportaali</title>
+<style>
+  :root{ --blue:#0A66FF; --black:#000; }
+  *{ box-sizing:border-box }
+  body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica; background:#fff; color:#111; }
+  header{ display:flex; align-items:center; gap:10px; background:var(--blue); color:#fff; padding:14px 16px; }
+  header .dot{ width:10px; height:10px; border-radius:50%; background:#fff; opacity:.8 }
+  header .brand{ font-size:20px; font-weight:800; text-shadow:1px 1px var(--black) }
+  header .company{ margin-left:auto; font-weight:700; text-shadow:1px 1px var(--black) }
+  .wrap{ padding:22px; max-width:640px; margin:0 auto; }
+  .sub{ margin-top:6px; color:#6b7280; font-size:12px }
+  .card{ border:1px solid var(--black); border-radius:16px; padding:18px; }
+  .btn{ width:100%; padding:16px; margin:10px 0; font-size:18px; font-weight:800;
+        border-radius:14px; border:1px solid var(--black); cursor:pointer;
+        background:var(--blue); color:#fff; text-shadow:1px 1px var(--black); }
+  .btn-secondary{ background:#F7F7F7; color:#0A66FF }
+  .muted{ color:#6b7280; font-size:12px; margin-top:6px }
+</style>
+</head>
+<body>
+  <header>
+    <div class="dot"></div>
+    <div class="brand">Yritysportaali</div>
+    <div class="company" id="companyName">Yritys</div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <button class="btn" id="btnCompany">Yrityksen tiedot</button>
+      <div class="sub">Nimi, osoite, puhelin, Y-tunnus. Tallennus selaimeen.</div>
+
+      <button class="btn" id="btnEmployees">Työntekijät (10 paikkaa)</button>
+      <div class="sub">Syötä työntekijöiden nimet (1–10). Käytetään valinnoissa.</div>
+
+      <button class="btn" id="btnHours">Tuntihallinta</button>
+      <div class="sub">Avaa tuntihallinta.html.</div>
+
+      <button class="btn" id="btnEntry">Tuntikirjaus</button>
+      <div class="sub">Avaa tuntikirjaus.html.</div>
+
+      <button class="btn" id="btnRoute">Reitti ja kilometrit</button>
+      <div class="sub">Avaa reittijakilometrit.html.</div>
+
+      <button class="btn" id="btnInvoice">Lasku</button>
+      <div class="sub">Avaa lasku.html.</div>
+
+      <button class="btn" id="btnReports">Raportit</button>
+      <div class="sub">Avaa raportit.html.</div>
+
+      <button class="btn" id="btnCustomers">Asiakasrekisteri</button>
+      <div class="sub">Avaa asiakasrekisteri.html.</div>
+
+      <hr style="margin:16px 0;border:none;border-top:1px solid #000;opacity:.15">
+      <button class="btn btn-secondary" id="btnOpenWindow">Avaa omana ikkunana (tietokone)</button>
+      <div class="muted">Mobiilissa avaa samaan välilehteen. Tietokoneella yrittää erillistä ikkunaa.</div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const LS_COMP = 'yritys_tiedot';
+
+  function refreshHeaderName(){
+    try{
+      const data = JSON.parse(localStorage.getItem(LS_COMP)||'{}');
+      document.getElementById('companyName').textContent = (data && data.nimi) ? data.nimi : 'Yritys';
+    }catch(_){
+      document.getElementById('companyName').textContent = 'Yritys';
+    }
+  }
+
+  async function openSiblingRobust(rawName){
+    const base = location.href.slice(0, location.href.lastIndexOf('/') + 1);
+    const safe = rawName.split('/').map(encodeURIComponent).join('/');
+    const url  = base + safe + (safe.includes('?') ? '&' : '?') + 'cb=' + Date.now();
+
+    if (location.protocol === 'file:') { location.href = url; return; }
+    try {
+      const res = await fetch(url, { method:'HEAD', cache:'no-store' });
+      if (res.ok) { location.href = url; return; }
+    } catch(_) {}
+    location.href = url;
+  }
+
+  function openAsWindowCurrent(){
+    const base = location.href.split('#')[0].split('?')[0];
+    const url  = base + (base.includes('?')?'&':'?') + 'cb=' + Date.now();
+    const features = [
+      'noopener','noreferrer',
+      'menubar=no','toolbar=no','location=no','status=no','resizable=yes',
+      'scrollbars=yes','width=1200','height=800','left=100','top=80'
+    ].join(',');
+    const win = window.open(url, '', features);
+    if(!win){ location.href = url; }
+  }
+
+  document.getElementById('btnCompany').addEventListener('click', ()=> openSiblingRobust('yrityksen-tiedot.html'));
+  document.getElementById('btnEmployees').addEventListener('click', ()=> openSiblingRobust('tyontekijat.html'));
+  document.getElementById('btnHours').addEventListener('click', ()=> openSiblingRobust('tuntihallinta.html'));
+  document.getElementById('btnEntry').addEventListener('click', ()=> openSiblingRobust('tuntikirjaus.html'));
+  document.getElementById('btnRoute').addEventListener('click', ()=> openSiblingRobust('reittijakilometrit.html'));
+  document.getElementById('btnInvoice').addEventListener('click', ()=> openSiblingRobust('lasku.html'));
+  document.getElementById('btnReports').addEventListener('click', ()=> openSiblingRobust('raportit.html'));
+  document.getElementById('btnCustomers').addEventListener('click', ()=> openSiblingRobust('asiakasrekisteri.html'));
+  document.getElementById('btnOpenWindow').addEventListener('click', openAsWindowCurrent);
+
+  refreshHeaderName();
+})();
+</script>
+</body>
+</html>

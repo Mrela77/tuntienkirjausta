@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ostolaskujen ajo (PDF → Excel)</title>
+<style>
+  :root { --blue:#0A66FF; --line:#e5e7eb; --ink:#0b1220; }
+  *{ box-sizing:border-box }
+  body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica; background:#fff; color:var(--ink) }
+  header{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 16px; background:var(--blue); color:#fff }
+  header .title{ font-weight:900; letter-spacing:.2px }
+  .wrap{ max-width:1100px; margin:0 auto; padding:18px }
+  .card{ background:#fff; border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:16px }
+  .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center }
+  input[type="file"]{ width:100%; padding:12px; border:1px solid var(--line); border-radius:12px }
+  .btn{ border:1px solid var(--ink); border-radius:12px; padding:12px 16px; font-weight:800; cursor:pointer; background:#F4F6FA }
+  .btn.primary{ background:var(--blue); color:#fff; border-color:#000; }
+  .pill{ display:inline-block; padding:4px 10px; border:1px solid var(--line); border-radius:999px; font-size:12px; background:#F9FAFB }
+  textarea{ width:100%; min-height:120px; border:1px solid var(--line); border-radius:12px; padding:12px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace }
+  table{ width:100%; border-collapse:collapse; }
+  th,td{ border-bottom:1px solid var(--line); padding:8px 10px; font-size:14px; }
+  th{ position:sticky; top:0; background:#f7f7fb; z-index:1 }
+  td input{ width:100%; border:1px solid #dcdfe5; border-radius:8px; padding:6px 8px; font:inherit; }
+  .right{ text-align:right }
+  .muted{ color:#6b7280; font-size:12px }
+  .warn{ color:#b00020 }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">Ostolaskujen ajo</div>
+  <div id="meta" class="pill">Valmiina</div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h3 style="margin-top:0">PDF-ostolaskut</h3>
+    <div class="row">
+      <input id="file" type="file" accept="application/pdf" multiple>
+      <button id="btnParse" class="btn primary">Tuo / Parsinta</button>
+      <button id="btnClearSel" class="btn">Tyhjennä valinta</button>
+      <span class="pill" id="selInfo">Valittuna: 0 PDF</span>
+    </div>
+    <p class="muted" id="pdfjsNote">PDF.js ladataan CDN:stä. Jos se on estetty, laita <code>pdf.min.js</code> ja <code>pdf.worker.min.js</code> tähän kansioon – sivu löytää ne automaattisesti.</p>
+    <textarea id="log" placeholder="Esikatselun raakateksti / loki..." readonly></textarea>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h3 style="margin:0">Tunnistetut rivit</h3>
+      <div class="row" style="gap:8px">
+        <span class="pill" id="rowCount">0 riviä</span>
+        <button id="btnToExcel" class="btn">Vie Excel</button>
+        <button id="btnClearRows" class="btn">Tyhjennä puskuri</button>
+      </div>
+    </div>
+    <div style="overflow:auto; max-height:65vh">
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th>tuotekoodi</th>
+            <th>tuote</th>
+            <th class="right">kpl määrä</th>
+            <th>yksikkö</th>
+            <th class="right">nettohinta veroton</th>
+            <th class="right">nettohinta verollinen</th>
+            <th class="right">yhteensä veroton</th>
+            <th class="right">yhteensä verollinen</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="muted">Voit muokata arvoja suoraan taulukossa ennen vientiä.</p>
+  </div>
+</div>
+
+<!-- pdf.js: CDN → fallback paikalliseen -->
+<script>
+(function loadPdfJs(){
+  const CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+  const CDN_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+  function setWorker(base){
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = base;
+      document.getElementById('pdfjsNote').innerHTML = 'PDF.js käytössä: ' + (base.startsWith('http') ? 'CDN' : 'paikallinen');
+    }
+  }
+  function addScript(src, onload, onerror){
+    const s=document.createElement('script'); s.src=src; s.onload=onload; s.onerror=onerror; document.head.appendChild(s);
+  }
+  addScript(CDN, ()=>setWorker(CDN_WORKER), ()=>{
+    addScript('./pdf.min.js', ()=>setWorker('./pdf.worker.min.js'), ()=>{
+      document.getElementById('pdfjsNote').innerHTML =
+        '<span class="warn">PDF.js ei latautunut.</span> Voit silti liittää tekstiä käsin lokikenttään ja painaa "Tuo / Parsinta".';
+    });
+  });
+})();
+</script>
+
+<script>
+/* ========= Utilit ========= */
+const $ = id => document.getElementById(id);
+
+// FI-numeroiden tulkinta → numero (sallitaan €, väli, NBSP, tuhaterotin, miinus)
+const numFI = s => {
+  if (s==null) return NaN;
+  s = String(s)
+        .replace(/\u00A0/g,' ')   // NBSP
+        .replace(/€/g,'')
+        .replace(/\s+/g,'')
+        .replace(/\./g,'')        // 1.234,56 -> 1234,56
+        .replace(',', '.');       // , -> .
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : NaN;
+};
+// Näyttöön FI-muoto
+const fmtFI = n => Number.isFinite(n) ? n.toLocaleString('fi-FI',{minimumFractionDigits:2,maximumFractionDigits:2}) : '';
+
+let rows = []; // vain yksi määrittely
+
+function updateBadge(){
+  $('rowCount').textContent = `${rows.length} riviä`;
+  const sumNet = rows.reduce((a,r)=>a+(Number(r.net_total)||0),0);
+  const sumGross = rows.reduce((a,r)=>a+(Number(r.gross_total)||0),0);
+  $('meta').textContent = `Rivejä ${rows.length} • Veroton ${fmtFI(sumNet)} € • Verollinen ${fmtFI(sumGross)} €`;
+}
+
+/* ========= PDF → teksti ========= */
+async function pdfToText(file){
+  if (!window.pdfjsLib) {
+    return `*** Virhe ${file.name}: PDF.js ei käytössä`;
+  }
+  const arr = new Uint8Array(await file.arrayBuffer());
+  const pdf = await pdfjsLib.getDocument({data:arr}).promise;
+  let lines = [];
+  for(let p=1;p<=pdf.numPages;p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    let items = content.items.map(i=>({str:i.str, x:i.transform[4], y:i.transform[5]}));
+    items.sort((a,b)=> (Math.abs(b.y-a.y) < 2 ? a.x-b.x : b.y-a.y));
+    let buf=[], lastY=null;
+    for(const it of items){
+      if(lastY!==null && Math.abs(it.y-lastY)>2){ lines.push(buf.join(' ').trim()); buf=[it.str]; }
+      else { buf.push(it.str); }
+      lastY = it.y;
+    }
+    if(buf.length) lines.push(buf.join(' ').trim'); /* <-- TÄMÄ ON VÄÄRIN! JÄTETTY TAHALLA ESIMERKIKSI */
+  }
+  return lines.join('\n');
+}
+</script>
+<script>
+/* YLLÄ OLI BUGI – KORJATTU VERSIO: */
+async function pdfToText(file){
+  if (!window.pdfjsLib) {
+    return `*** Virhe ${file.name}: PDF.js ei käytössä`;
+  }
+  const arr = new Uint8Array(await file.arrayBuffer());
+  const pdf = await pdfjsLib.getDocument({data:arr}).promise;
+  let lines = [];
+  for(let p=1;p<=pdf.numPages;p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    let items = content.items.map(i=>({str:i.str, x:i.transform[4], y:i.transform[5]}));
+    items.sort((a,b)=> (Math.abs(b.y-a.y) < 2 ? a.x-b.x : b.y-a.y));
+    let buf=[], lastY=null;
+    for(const it of items){
+      if(lastY!==null && Math.abs(it.y-lastY)>2){ lines.push(buf.join(' ').trim()); buf=[it.str]; }
+      else { buf.push(it.str); }
+      lastY = it.y;
+    }
+    if(buf.length) lines.push(buf.join(' ').trim()); /* ✅ KORJATTU: ei ylimääräistä ) */
+  }
+  return lines.join('\n');
+}
+</script>
+
+<script>
+/* ========= MANUAALINEN (profiili) PARSERI: KRauta / J & S Happonen =========
+   Otsikkorivi (esim):
+     "10 500923405  1 KPL 17,09 17,09 25.50 %"
+   – tuotenimi seuraaville riveille
+   – totals-rivillä vähintään KAKSI rahasummaa → net_total, gross_total
+*/
+function parseKRautaHapponen(text){
+  const moneyReGlobal = /-?\d{1,3}(?:[.\u00A0 ]\d{3})*,\d{2}\s*€?/g;     // kaikki summat
+  const headRe = /^(\d+)\s+([0-9A-ZÅÄÖ.\-\/]+)\s+(\d+(?:,\d+)?)\s+([A-ZÅÄÖ]+)\s+(.+)$/; // loppu rivistä erikseen
+  const signature = /J\s*&\s*S\s*HAPPONEN|K-?Rauta/i.test(text);
+  if (!signature) return [];
+
+  const lines = text.split(/\r?\n/).map(s=>s.replace(/\s{2,}/g,' ').trim()).filter(Boolean);
+  const out = [];
+
+  for (let i=0; i<lines.length; i++){
+    const line = lines[i];
+    const m = line.match(headRe);
+    if(!m) continue;
+
+    const code = m[2];
+    const qty  = numFI(m[3]);
+    const unit = m[4];
+
+    // Otsikkorivin loppuosasta → net_unit, gross_unit
+    let net_unit = '', gross_unit = '';
+    const moneyInHead = (m[5].match(moneyReGlobal)||[]).map(x=>numFI(x)).filter(Number.isFinite);
+    if (moneyInHead.length >= 2){
+      net_unit   = moneyInHead[0];
+      gross_unit = moneyInHead[1];
+    }
+
+    // Nimikenttä kunnes totals (2 rahasummaa)
+    let nameParts = [];
+    let net_total = '', gross_total = '';
+    let j = i+1;
+
+    for(; j<lines.length; j++){
+      const t = lines[j];
+      if (headRe.test(t)) break; // safety
+      const monies = (t.match(moneyReGlobal)||[]).map(x=>numFI(x)).filter(Number.isFinite);
+      if (monies.length >= 2){
+        net_total   = monies[monies.length-2];
+        gross_total = monies[monies.length-1];
+        break;
+      }else{
+        nameParts.push(t);
+      }
+    }
+    if (j < lines.length && (lines[j].match(moneyReGlobal)||[]).length >= 2){
+      i = j; // hyppää totals-rivin yli
+    }
+
+    out.push({
+      code: code || '',
+      name: nameParts.join(' ').replace(/\s+/g,' ').trim(),
+      qty: Number.isFinite(qty) ? qty : '',
+      unit: unit || '',
+      net_unit: Number.isFinite(net_unit) ? net_unit : '',
+      gross_unit: Number.isFinite(gross_unit) ? gross_unit : '',
+      net_total: Number.isFinite(net_total) ? net_total : '',
+      gross_total: Number.isFinite(gross_total) ? gross_total : ''
+    });
+  }
+  return out;
+}
+
+/* ========= YLEISheuristiikka fallback ========= */
+function splitLinesToRows(text){
+  const out=[];
+  const unitCandidates = ['kpl','jm','m','m2','m³','kg','t','l','pkt','h','krt','prs','rs','rl','pss'];
+  for (const raw of text.split(/\r?\n/)){
+    const line = raw.replace(/\s{2,}/g,' ').trim();
+    if(!line) continue;
+    const tokens = line.split(/\s+/);
+    const numIdx = [];
+    tokens.forEach((t,i)=>{ if(/^-?\d{1,3}(?:\.\d{3})*,\d{2}$/.test(t) || /^-?\d+(?:,\d+)?$/.test(t)) numIdx.push(i); });
+    if(numIdx.length < 2) continue;
+
+    const lastNums = numIdx.slice(-4).map(i => ({i, v: numFI(tokens[i])}));
+    if (lastNums.length < 2) continue;
+
+    let net_unit=null, gross_unit=null, net_total=null, gross_total=null, qty=null;
+    if (lastNums.length>=4){
+      gross_total = lastNums[3].v;
+      net_total   = lastNums[2].v;
+      gross_unit  = lastNums[1].v;
+      net_unit    = lastNums[0].v;
+    } else {
+      net_total = lastNums[lastNums.length-1].v;
+      net_unit  = lastNums[lastNums.length-2].v;
+    }
+
+    if (Number.isFinite(net_unit) && net_unit>0 && Number.isFinite(net_total)) {
+      const q = net_total / net_unit;
+      const qRound = Math.round(q*100)/100;
+      qty = (Math.abs(qRound - Math.round(qRound)) < 0.01) ? Math.round(qRound) : qRound;
+      if (qty===0 || !Number.isFinite(qty)) qty = '';
+    }
+
+    const code = (tokens[0]||'').match(/^[A-ZÅÄÖ0-9%.\-\/]+$/i) ? tokens[0] : '';
+
+    let unit = '';
+    for (let i=numIdx[0]-1; i>=1; i--){
+      const t=tokens[i].toLowerCase();
+      if (unitCandidates.includes(t)) { unit=tokens[i]; break; }
+    }
+
+    const cutAt = lastNums[0]?.i ?? tokens.length;
+    const leftTokens = tokens.slice(code?1:0, Math.max(1, cutAt - 1));
+    const name = leftTokens.join(' ').trim();
+
+    if (!Number.isFinite(net_total) && !Number.isFinite(net_unit)) continue;
+
+    out.push({
+      code,
+      name,
+      qty: qty ?? '',
+      unit: unit || '',
+      net_unit: Number.isFinite(net_unit)? net_unit : '',
+      gross_unit: Number.isFinite(gross_unit)? gross_unit : '',
+      net_total: Number.isFinite(net_total)? net_total : '',
+      gross_total: Number.isFinite(gross_total)? gross_total : ''
+    });
+  }
+  return out;
+}
+
+/* ========= Taulukko ========= */
+function renderTable(){
+  const tb = $('tbl').querySelector('tbody');
+  tb.innerHTML = '';
+  rows.forEach((r,idx)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML = `
+      <td><input data-i="${idx}" data-k="code" value="${(r.code??'')}"></td>
+      <td><input data-i="${idx}" data-k="name" value="${(r.name??'')}"></td>
+      <td class="right"><input data-i="${idx}" data-k="qty" value="${r.qty!==''?String(r.qty).replace('.',','):''}"></td>
+      <td><input data-i="${idx}" data-k="unit" value="${(r.unit??'')}"></td>
+      <td class="right"><input data-i="${idx}" data-k="net_unit" value="${r.net_unit!==''?fmtFI(r.net_unit):''}"></td>
+      <td class="right"><input data-i="${idx}" data-k="gross_unit" value="${r.gross_unit!==''?fmtFI(r.gross_unit):''}"></td>
+      <td class="right"><input data-i="${idx}" data-k="net_total" value="${r.net_total!==''?fmtFI(r.net_total):''}"></td>
+      <td class="right"><input data-i="${idx}" data-k="gross_total" value="${r.gross_total!==''?fmtFI(r.gross_total):''}"></td>
+    `;
+    tb.appendChild(tr);
+  });
+  updateBadge();
+}
+
+$('tbl').addEventListener('input', (e)=>{
+  const i = Number(e.target.dataset.i), k=e.target.dataset.k; if(!Number.isInteger(i)||!k) return;
+  let v=e.target.value;
+  if(['qty','net_unit','gross_unit','net_total','gross_total'].includes(k)){
+    const n=numFI(v); rows[i][k] = Number.isFinite(n)?n:'';
+  }else{
+    rows[i][k]=v;
+  }
+});
+
+/* ========= Excel-vienti ========= */
+function xmlEscape(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;'); }
+function utf8enc(str){ if(window.TextEncoder){ return new TextEncoder().encode(str); } var out=[],i,c; for(i=0;i<str.length;i++){ c=str.charCodeAt(i); if(c<128) out.push(c); else if(c<2048){ out.push(192|(c>>6),128|(c&63)); } else { out.push(224|(c>>12),128|((c>>6)&63),128|(c&63)); } } return new Uint8Array(out); }
+function u16(n){ return new Uint8Array([n&255,(n>>8)&255]); } function u32(n){ return new Uint8Array([n&255,(n>>8)&255,(n>>16)&255,(n>>24)&255]); }
+var CRC_TABLE=(function(){var t=[],i,k,c;for(i=0;i<256;i++){c=i;for(k=0;k<8;k++){c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);}t[i]=c>>>0;}return t;})();
+function crc32(bytes){ var c=~0>>>0,i; for(i=0;i<bytes.length;i++){ c=(c>>>8)^CRC_TABLE[(c^bytes[i])&255]; } return (~c)>>>0; }
+function nowZipDT(){ var d=new Date(); return { t:((d.getHours()<<11)|(d.getMinutes()<<5)|((d.getSeconds()/2)|0))>>>0, d:(((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate())>>>0 }; }
+function concat(arrs){ var len=0; arrs.forEach(a=>len+=a.length); var out=new Uint8Array(len),off=0; arrs.forEach(a=>{ out.set(a,off); off+=a.length; }); return out; }
+
+function buildSheetXml(matrix){
+  let rowsXml=[];
+  for(let r=0;r<matrix.length;r++){
+    let cells=[];
+    for(let c=0;c<matrix[r].length;c++){
+      const v=matrix[r][c];
+      if(v===''||v==null) continue;
+      const ref=String.fromCharCode(65+c)+(r+1);
+      if(typeof v==='number'){ cells.push(`<c r="${ref}"><v>${v}</v></c>`); }
+      else { cells.push(`<c r="${ref}" t="inlineStr"><is><t>${xmlEscape(String(v))}</t></is></c>`); }
+    }
+    rowsXml.push(`<row r="${r+1}">${cells.join('')}</row>`);
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowsXml.join('')}</sheetData></worksheet>`;
+}
+function buildWorkbookXml(){ return `<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Ostolaskurivit" sheetId="1" r:id="rId1"/></sheets></workbook>`; }
+function relsWorkbook(){ return `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`; }
+function relsRoot(){ return `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`; }
+function contentTypes(){ return `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`; }
+
+function makeZip(files){
+  const chunks=[], central=[]; let offset=0; const dd=nowZipDT();
+  for(const f of files){
+    const name=utf8enc(f.name), data=f.data;
+    const crc=crc32(data), comp=data; // ei pakkausta
+    const local=concat([u32(0x04034b50),u16(20),u16(0),u16(0),u16(dd.t),u16(dd.d),u32(crc),u32(comp.length>>>0),u32(data.length>>>0),u16(name.length),u16(0),name,comp]);
+    chunks.push(local);
+    const centralHdr=concat([u32(0x02014b50),u16(20),u16(20),u16(0),u16(0),u16(dd.t),u16(dd.d),u32(crc),u32(comp.length>>>0),u32(data.length>>>0),u16(name.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(offset>>>0),name]);
+    central.push(centralHdr);
+    offset += local.length;
+  }
+  const centralBlob=concat(central); const partsBlob=concat(chunks);
+  const end=concat([u32(0x06054b50),u16(0),u16(0),u16(files.length),u16(files.length),u32(centralBlob.length>>>0),u32(partsBlob.length>>>0),u16(0)]);
+  return concat([partsBlob, centralBlob, end]);
+}
+
+function exportExcel(){
+  const header = ['tuotekoodi','tuote','kpl määrä','yksikkö','nettohinta veroton','nettohinta verollinen','yhteensä veroton','yhteensä verollinen'];
+  const matrix = [header].concat(rows.map(r=>[
+    r.code||'',
+    r.name||'',
+    r.qty===''?'':Number(r.qty),
+    r.unit||'',
+    r.net_unit===''?'':Number(r.net_unit),
+    r.gross_unit===''?'':Number(r.gross_unit),
+    r.net_total===''?'':Number(r.net_total),
+    r.gross_total===''?'':Number(r.gross_total)
+  ]));
+
+  const files = [
+    {name:'[Content_Types].xml', data:utf8enc(contentTypes())},
+    {name:'_rels/.rels', data:utf8enc(relsRoot())},
+    {name:'xl/workbook.xml', data:utf8enc(buildWorkbookXml())},
+    {name:'xl/_rels/workbook.xml.rels', data:utf8enc(relsWorkbook())},
+    {name:'xl/worksheets/sheet1.xml', data:utf8enc(buildSheetXml(matrix))}
+  ];
+  const zip = makeZip(files);
+  const blob = new Blob([zip], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const a=document.createElement('a'), url=URL.createObjectURL(blob);
+  a.href=url; a.download='Ostolaskurivit.xlsx'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+
+/* ========= Hookit ========= */
+$('file').addEventListener('change', ()=> $('selInfo').textContent = `Valittuna: ${$('file').files.length} PDF`);
+$('btnClearSel').addEventListener('click', ()=>{ $('file').value=''; $('selInfo').textContent='Valittuna: 0 PDF'; });
+
+$('btnParse').addEventListener('click', async ()=>{
+  const files=[...$('file').files];
+  let allText='';
+  $('meta').textContent = 'Parsitaan…';
+  if(files.length===0){
+    allText = $('log').value || '';
+  }else{
+    for(const f of files){
+      try{
+        const t = await pdfToText(f);
+        allText += `\n--- ${f.name} ---\n` + t + '\n';
+      }catch(e){
+        allText += `\n*** Virhe ${f.name}: ${e.message||e}\n`;
+      }
+    }
+  }
+  $('log').value = allText.trim();
+
+  // 1) Vendor-profiili (manuaalinen sääntö)
+  let parsed = parseKRautaHapponen(allText);
+
+  // 2) Fallback: yleisheuristiikka
+  if (!parsed.length){
+    parsed = splitLinesToRows(allText);
+  }
+
+  rows = parsed;
+  renderTable();
+  $('meta').textContent = 'Valmis';
+});
+
+$('btnToExcel').addEventListener('click', exportExcel);
+$('btnClearRows').addEventListener('click', ()=>{ rows=[]; renderTable(); });
+
+/* Init */
+renderTable();
+</script>
+</body>
+</html>

@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lasku</title>
+  <style>
+    :root{--blue:#2563eb;--line:#e5e7eb;--ink:#0b1220;--danger:#dc2626}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f6f7fb;color:var(--ink)}
+    header{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;background:var(--blue);color:#fff}
+    header .title{font-weight:900;letter-spacing:.2px}
+    .btn{border:0;border-radius:999px;padding:8px 12px;font-weight:700;cursor:pointer}
+    .btn.s{background:#fff;color:#111}
+    .btn.p{background:#0b57d0;color:#fff}
+    .tabs{position:sticky;top:52px;z-index:29;background:var(--blue);padding:6px 12px;display:flex;gap:8px}
+    .tab{padding:8px 12px;border-radius:999px;background:#ffffff1a;color:#fff;font-weight:700;border:1px solid #ffffff2e;cursor:pointer}
+    .tab.active{background:#fff;color:#111}
+    .container{max-width:980px;margin:0 auto;padding:18px}
+    .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+    h2{margin:6px 0 10px;font-size:16px}
+    label{display:block;font-size:13px;font-weight:700;margin:8px 0 4px}
+    input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+    th,td{padding:8px;border-bottom:1px solid var(--line);font-size:14px}
+    th{background:#eef2ff;text-align:left}
+    td.money,th.money{text-align:right}
+    .row-del{border:1px solid var(--danger);color:var(--danger);background:#fff;border-radius:8px;padding:4px 8px;cursor:pointer}
+    .summary{display:flex;gap:10px;justify-content:flex-end;margin-top:10px}
+    .summary div{background:#eef2ff;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-weight:800}
+    .input-group{display:flex;align-items:stretch}
+    .input-group input{border-top-right-radius:0;border-bottom-right-radius:0}
+    .input-group .suffix{display:inline-flex;align-items:center;justify-content:center;padding:0 10px;border:1px solid var(--line);border-left:0;border-top-right-radius:10px;border-bottom-right-radius:10px;background:#f3f4f6;font-weight:700;min-width:48px}
+    @page{size:A4;margin:14mm}
+    @media print{ body > *:not(#printRoot){display:none!important} #printRoot{display:block!important} }
+    #printRoot{display:none}
+    .inv{width:210mm;min-height:297mm;margin:0 auto;background:#fff;color:#000;padding:14mm;font-size:10.5pt;line-height:1.25}
+    .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6mm}
+    .sender{white-space:pre-line}
+    .meta{border:1px solid #000;border-radius:2px;padding:3.5mm;min-width:72mm;max-width:84mm}
+    .meta .h{font-weight:800;font-size:16pt;margin-bottom:2mm}
+    .meta table{width:100%;border-collapse:collapse}
+    .meta td{padding:1.2mm 0;vertical-align:top}
+    .cols{display:flex;gap:6mm;margin-top:4mm}
+    .addr{border:1px solid #000;border-radius:2px;padding:3.5mm;width:96mm}
+    .addr .title{font-weight:800;margin-bottom:2mm}
+    .pay{border:1px solid #000;border-radius:2px;padding:3.5mm;flex:1;display:grid;grid-template-columns:28mm 1fr;gap:2mm 6mm}
+    .pay div:nth-child(2n){text-align:right;font-weight:800}
+    .items{width:180mm;margin-top:6mm;border-collapse:collapse;font-size:10.5pt}
+    .items th,.items td{border:1px solid #000;padding:2.5mm}
+    .items th{background:#f2f4f7}
+    .col-name{width:84mm}.col-unit{width:28mm;text-align:right}.col-qty{width:22mm;text-align:right}.col-vat{width:16mm;text-align:right}.col-total{width:30mm;text-align:right}
+    .totals{display:flex;gap:4mm;justify-content:flex-end;margin-top:6mm}
+    .tot{border:1px solid #000;border-radius:2px;padding:3mm 4mm;min-width:60mm;text-align:right}
+    .tot .label{display:block}.tot .value{display:block;font-weight:800}
+    .bankrow{display:flex;justify-content:space-between;align-items:flex-end;gap:10mm;margin-top:6mm}
+    .bank{line-height:1.35}
+    #p_barcode_svg svg{height:24mm}
+    .barcode-num{margin-top:2mm;font-family:monospace}
+    .footer{border-top:1px solid #000;margin-top:8mm;padding-top:3mm;display:flex;justify-content:space-between;gap:6mm}
+    .footer .left{white-space:pre-line}
+    .footer .right{white-space:pre-line}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">Lasku</div>
+    <div>
+      <button class="btn s" id="genRef">Luo viite</button>
+      <button class="btn s" id="genRF">Luo RF</button>
+      <button class="btn s" id="genBarcode">Viivakoodi</button>
+      <button class="btn p" onclick="window.print()">Tulosta / PDF</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" data-target="sec-asiakas">Yleiset</button>
+    <button class="tab" data-target="sec-rivit">Rivit</button>
+    <button class="tab" data-target="sec-maksu">Maksu</button>
+  </div>
+
+  <div class="container">
+    <div class="card section" id="sec-asiakas">
+      <h2>Asiakas</h2>
+      <label>Nimi<input id="billname"></label>
+      <label>Katuosoite<input id="billaddr1"></label>
+      <div class="grid2">
+        <label>Postinumero<input id="billzip" inputmode="numeric"></label>
+        <label>Postitoimipaikka<input id="billcity"></label>
+      </div>
+
+      <h2>Lasku</h2>
+      <div class="grid2">
+        <label>Laskun numero<input id="invno"></label>
+        <label>Asiakasnumero<input id="cust"></label>
+        <label>Laskun pvm<input id="date" type="date"></label>
+        <label>Eräpäivä<input id="due" type="date" readonly></label>
+        <label>Maksuehto (päivää)
+          <div class="input-group">
+            <input id="termsDays" type="number" min="0" step="1" inputmode="numeric" placeholder="0">
+            <span class="suffix">pv</span>
+          </div>
+        </label>
+        <label>Viivästyskorko<input id="int" placeholder="7,00 %"></label>
+        <label>Huomautusaika<input id="claim" placeholder="7 pv"></label>
+        <label>Viite<input id="ref"></label>
+      </div>
+
+      <h2>Yritys</h2>
+      <label>Nimi<input id="compname"></label>
+      <div class="grid2">
+        <label>Y-tunnus<input id="businessid"></label>
+        <label>ALV-numero<input id="vatid"></label>
+      </div>
+      <label>Katuosoite<input id="compstreet"></label>
+      <div class="grid2">
+        <label>Postinumero<input id="compzip" inputmode="numeric"></label>
+        <label>Postitoimipaikka<input id="compcity"></label>
+      </div>
+      <input type="hidden" id="compaddr">
+      <div class="grid2">
+        <label>Puhelin<input id="c_phone"></label>
+        <label>Sähköposti<input id="co_email"></label>
+      </div>
+      <div class="grid2">
+        <label>WWW<input id="co_www"></label>
+        <label>Logo URL<input id="complogo" placeholder="https://.../logo.png"></label>
+      </div>
+    </div>
+
+    <div class="card section" id="sec-rivit" style="display:none">
+      <h2>Rivit</h2>
+      <table id="tbl">
+        <thead><tr>
+          <th class="col-name">Nimi</th>
+          <th class="col-unit">Yksikköhinta €</th>
+          <th class="col-qty">Määrä</th>
+          <th class="col-vat">ALV %</th>
+          <th class="col-total">Yhteensä €</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <button class="btn s" id="addRow" style="margin-top:8px">Lisää rivi</button>
+      <div class="summary">
+        <div>Veroton: <span id="sum-net">0,00 €</span></div>
+        <div>ALV: <span id="sum-vat">0,00 €</span></div>
+        <div>Yhteensä: <span id="sum-gross">0,00 €</span></div>
+      </div>
+    </div>
+
+    <div class="card section" id="sec-maksu" style="display:none">
+      <h2>Maksu</h2>
+      <label>IBAN<input id="iban"></label>
+      <div class="grid2">
+        <label>BIC<input id="bic"></label>
+        <label>Pankki<input id="bank"></label>
+      </div>
+      <div style="margin-top:6px;font-size:13px">RF-viite: <span id="rf_out">—</span></div>
+      <div style="margin-top:4px;font-size:13px">Viivakoodi-data: <span id="barcode_data">—</span></div>
+      <svg id="barcode_svg"></svg>
+    </div>
+  </div>
+
+  <!-- PRINT -->
+  <div id="printRoot">
+    <div class="inv" id="printA4">
+      <div class="top">
+        <div class="sender" id="p_sender"></div>
+        <div class="meta">
+          <div class="h">LASKU 1(1)</div>
+          <table>
+            <tr><td>Laskun numero</td><td style="text-align:right" id="p_invno"></td></tr>
+            <tr><td>Viitenumero</td><td style="text-align:right" id="p_ref"></td></tr>
+            <tr><td>Laskun pvm</td><td style="text-align:right" id="p_date"></td></tr>
+            <tr><td>Eräpäivä</td><td style="text-align:right" id="p_due"></td></tr>
+            <tr><td>Maksuehto</td><td style="text-align:right" id="p_terms"></td></tr>
+            <tr><td>Viivästyskorko</td><td style="text-align:right" id="p_int"></td></tr>
+            <tr><td>Huomautusaika</td><td style="text-align:right" id="p_claim"></td></tr>
+            <tr><td>Asiakkaan y-tunnus</td><td style="text-align:right" id="p_custbid"></td></tr>
+            <tr><td>Asiakasnumero</td><td style="text-align:right" id="p_custno"></td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="cols">
+        <div class="addr">
+          <div class="title">VASTAANOTTAJA</div>
+          <div id="p_bill_name"></div>
+          <div id="p_bill_addr"></div>
+          <div id="p_bill_city"></div>
+        </div>
+        <div class="pay">
+          <div>Eräpäivä</div><div id="p_due2"></div>
+          <div>Viitenumero</div><div id="p_ref2"></div>
+          <div>Yhteensä</div><div id="p_total"></div>
+        </div>
+      </div>
+
+      <table class="items" id="p_items">
+        <thead><tr>
+          <th class="col-name">Nimi</th>
+          <th class="col-unit">Yksikköhinta €</th>
+          <th class="col-qty">Määrä</th>
+          <th class="col-vat">ALV %</th>
+          <th class="col-total">Yhteensä €</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="totals">
+        <div class="tot"><span class="label">Yhteensä ilman arvonlisäveroa €</span><span class="value" id="p_net"></span></div>
+        <div class="tot"><span class="label">Arvonlisävero yhteensä €</span><span class="value" id="p_vat"></span></div>
+        <div class="tot"><span class="label">Maksettava yhteensä €</span><span class="value" id="p_tot2"></span></div>
+      </div>
+
+      <div class="bankrow">
+        <div class="bank">
+          <div><b>BIC</b> <span id="p_bic"></span></div>
+          <div><b>Pankkitilinumero / IBAN</b> <span id="p_iban"></span> <span id="p_bank"></span></div>
+        </div>
+        <div id="p_barcode_svg"></div>
+      </div>
+      <div class="barcode-num" id="p_barcode_num"></div>
+
+      <div class="footer">
+        <div class="left" id="p_company_left"></div>
+        <div class="right" id="p_company_right">
+          Puh: <span id="p_phone"></span>
+          <span id="p_email"></span>
+          <span id="p_www"></span>
+          Y-tunnus: <span id="p_bid"></span>
+          ALV-numero: <span id="p_vatid"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <script>
+    /* Tabs */
+    document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('.section').forEach(s=>s.style.display='none');
+      t.classList.add('active');
+      document.getElementById(t.dataset.target).style.display='block';
+    }));
+
+    /* Helpers */
+    const fmt=n=>isFinite(n)?n.toLocaleString('fi-FI',{minimumFractionDigits:2,maximumFractionDigits:2}):'0,00';
+    const parseEuro=s=>{s=String(s||'').replace(/\s+/g,'').replace(/\./g,'').replace(/,/g,'.');const v=parseFloat(s);return isNaN(v)?0:v};
+    const pad2=n=>String(n).padStart(2,'0');
+    const toISO=d=>d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());
+    const onlyDigits=s=>String(s||'').replace(/\D+/g,'');
+
+    /* Yrityksen osoite -> koonti tulosteeseen */
+    const compstreet=document.getElementById('compstreet'),
+          compzip   =document.getElementById('compzip'),
+          compcity  =document.getElementById('compcity'),
+          compaddrEl=document.getElementById('compaddr');
+
+    function composeCompanyAddress(){
+      const street=(compstreet?.value||'').trim();
+      const zip   =(compzip?.value||'').trim();
+      const city  =(compcity?.value||'').trim();
+      const zipCity=[zip,city].filter(Boolean).join(' ');
+      const addr=[street,zipCity].filter(Boolean).join('\\n');
+      if(compaddrEl) compaddrEl.value=addr;
+      const name=(document.getElementById('compname')?.value||'').trim();
+      const block=[name,addr].filter(Boolean).join('\\n');
+      document.getElementById('p_sender').textContent=block;
+      document.getElementById('p_company_left').textContent=block;
+    }
+    ['input','change'].forEach(e=>{
+      compstreet?.addEventListener(e,composeCompanyAddress);
+      compzip?.addEventListener(e,composeCompanyAddress);
+      compcity?.addEventListener(e,composeCompanyAddress);
+    });
+
+    /* Rivilaskenta */
+    function recalc(){
+      const rows=[...document.querySelectorAll('#rows tr')];
+      let net=0,vat=0;
+      rows.forEach(r=>{
+        const price=parseEuro(r.querySelector('.moneyInput')?.value||0);
+        const qty=parseEuro((r.querySelector('.qty')?.value||'').toString().replace(/[^\d.,-]/g,''));
+        const v=parseEuro(r.querySelector('.vat')?.value||0);
+        const lineNet=price*qty, lineVat=lineNet*(v/100), lineGross=lineNet+lineVat;
+        net+=lineNet; vat+=lineVat;
+        r.querySelector('.lineTotal').textContent=fmt(lineGross);
+      });
+      const gross=net+vat;
+      document.getElementById('sum-net').textContent=fmt(net)+' €';
+      document.getElementById('sum-vat').textContent=fmt(vat)+' €';
+      document.getElementById('sum-gross').textContent=fmt(gross)+' €';
+    }
+    document.getElementById('tbl').addEventListener('input',()=>{recalc(); updateBarcode();});
+    document.getElementById('addRow').addEventListener('click',()=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML =
+        '<td><input></td>' +
+        '<td><input class="moneyInput" inputmode="decimal"></td>' +
+        '<td><input class="qty" inputmode="decimal"></td>' +
+        '<td><select class="vat">' +
+          '<option value="0">0</option>' +
+          '<option value="10">10</option>' +
+          '<option value="14">14</option>' +
+          '<option value="24">24</option>' +
+          '<option value="25.5" selected>25,5</option>' +
+        '</select></td>' +
+        '<td class="money"><span class="lineTotal">0,00</span></td>' +
+        '<td><button class="row-del">Poista</button></td>';
+      document.getElementById('rows').appendChild(tr);
+    });
+    document.getElementById('rows').addEventListener('click',e=>{
+      if(e.target.classList.contains('row-del')){
+        e.target.closest('tr').remove(); recalc(); updateBarcode();
+      }
+    });
+
+    /* Maksuehto -> eräpäivä */
+    const date=document.getElementById('date'),
+          due=document.getElementById('due'),
+          termsDays=document.getElementById('termsDays');
+    function getDays(){ const n=parseInt(termsDays.value,10); return isNaN(n)?0:Math.max(0,n); }
+    function updateDue(){
+      const baseStr = date.value || toISO(new Date());
+      if (!date.value) date.value = baseStr;
+      const days=getDays();
+      const base=new Date(baseStr+'T00:00:00'); const d=new Date(base);
+      d.setDate(d.getDate()+days);
+      due.value=toISO(d);
+      const el=document.getElementById('p_terms'); if(el) el.textContent=`${days} pv`;
+    }
+    date.addEventListener('change',updateDue);
+    termsDays.addEventListener('input',updateDue);
+    termsDays.addEventListener('change',updateDue);
+
+    /* Viite + RF */
+    const invnoEl=document.getElementById('invno'),
+          invnoPrint=document.getElementById('p_invno'),
+          ref=document.getElementById('ref'),
+          rf_out=document.getElementById('rf_out');
+
+    function genRefBase(b){
+      const d=String(b||'').replace(/\D/g,''); if(!d) return '';
+      const w=[7,3,1]; let s=0,k=0; for(let i=d.length-1;i>=0;i--) s+=Number(d[i])*w[k++%3];
+      return d+((10-(s%10))%10);
+    }
+    function toRF(r){
+      const base=String(r||'').replace(/\s+/g,''); if(!base) return '';
+      const s='RF00'+base;
+      const moved=(s.slice(4)+s.slice(0,4)).replace(/./g,ch=>/[0-9]/.test(ch)?ch:String(ch.charCodeAt(0)-55));
+      const mod=(BigInt(moved)%97n);
+      const chk=(98n-mod).toString().padStart(2,'0');
+      return 'RF'+chk+base;
+    }
+    genRef.addEventListener('click',()=>{ if(!ref.value) ref.value=genRefBase(invnoEl.value); });
+    genRF.addEventListener('click',()=>{ if(!ref.value) ref.value=genRefBase(invnoEl.value); const rf=toRF(ref.value); rf_out.textContent=rf||'—'; updateBarcode(); });
+
+    /* Viivakoodi v4 (IBAN + RF) */
+    const iban=document.getElementById('iban'), bic=document.getElementById('bic'), bank=document.getElementById('bank');
+    const barcode_svg=document.getElementById('barcode_svg'), barcode_data=document.getElementById('barcode_data');
+    function normalizeIBAN(s){return String(s||'').replace(/\s+/g,'').toUpperCase();}
+    function ibanDigitsFI16(i){return onlyDigits(i.replace(/^FI/i,'')).padStart(16,'0').slice(-16);}
+    function centsFromGross(){return Math.round(parseEuro(document.getElementById('sum-gross').textContent)*100);}
+    function dueYYYYMMDD(){return due.value?due.value.replaceAll('-',''):'00000000';}
+    function makeBarcodeV4(){
+      const iRaw=normalizeIBAN(iban.value), i16=ibanDigitsFI16(iRaw);
+      const amt8=Math.min(Math.max(centsFromGross(),0),99999999).toString().padStart(8,'0');
+      let rf=(rf_out.textContent||'').trim(); if(!rf || rf==='—'){ if(ref.value) rf=toRF(ref.value); }
+      if(!i16 || !rf) return '';
+      const rfDigits=onlyDigits(rf.replace(/^RF/i,'')).padStart(23,'0').slice(-23);
+      return '4'+i16+amt8+'2'+rfDigits+dueYYYYMMDD();
+    }
+    function updateBarcode(){
+      const data=makeBarcodeV4(); barcode_data.textContent=data||'—';
+      if(!data){ barcode_svg.innerHTML=''; return; }
+      try{ JsBarcode(barcode_svg,data,{format:'CODE128',displayValue:false,margin:0,height:44}); }catch(e){}
+    }
+    genBarcode.addEventListener('click',updateBarcode);
+
+    /* PRINT täyttö ja laskunumeron talletus */
+    function fillPrint(){
+      const set=(id,v)=>document.getElementById(id).textContent=v||'';
+      composeCompanyAddress();
+      set('p_phone',document.getElementById('c_phone').value);
+      set('p_email',document.getElementById('co_email').value);
+      set('p_www',document.getElementById('co_www').value);
+      set('p_bid',document.getElementById('businessid').value);
+      set('p_vatid',document.getElementById('vatid').value);
+
+      set('p_invno',invnoEl.value);
+      set('p_ref',ref.value);
+      set('p_date',date.value);
+      set('p_due',due.value);
+      set('p_terms',`${getDays()} pv`);
+      set('p_int',document.getElementById('int').value);
+      set('p_claim',document.getElementById('claim').value);
+      set('p_custbid','');
+      set('p_custno',document.getElementById('cust').value);
+
+      set('p_bill_name',document.getElementById('billname').value);
+      set('p_bill_addr',document.getElementById('billaddr1').value);
+      const billCityLine=(document.getElementById('billzip').value+' '+document.getElementById('billcity').value).trim();
+      set('p_bill_city',billCityLine);
+
+      set('p_due2',due.value);
+      set('p_ref2',ref.value);
+
+      const tb=document.querySelector('#p_items tbody');
+      tb.innerHTML='';
+      document.querySelectorAll('#rows tr').forEach(tr=>{
+        const name=tr.children[0]?.querySelector('input')?.value||'';
+        const price=parseEuro(tr.children[1]?.querySelector('input')?.value||0);
+        const qtyRaw=tr.children[2]?.querySelector('input')?.value||'';
+        const vat=parseEuro(tr.children[3]?.querySelector('select')?.value||0);
+        const gross=price*parseEuro(qtyRaw)*(1+vat/100);
+        const row=document.createElement('tr');
+        row.innerHTML=`
+          <td>${name}</td>
+          <td style="text-align:right">${fmt(price)}</td>
+          <td style="text-align:right">${qtyRaw}</td>
+          <td style="text-align:right">${fmt(vat)}</td>
+          <td style="text-align:right">${fmt(gross)}</td>`;
+        tb.appendChild(row);
+      });
+
+      const sumNet=parseEuro(document.getElementById('sum-net').textContent);
+      const sumVat=parseEuro(document.getElementById('sum-vat').textContent);
+      const sumGross=parseEuro(document.getElementById('sum-gross').textContent);
+      set('p_net',fmt(sumNet)); set('p_vat',fmt(sumVat)); set('p_tot2',fmt(sumGross)); set('p_total',fmt(sumGross));
+
+      set('p_iban',iban.value); set('p_bic',bic.value); set('p_bank',bank.value);
+
+      const data=makeBarcodeV4(); const wrap=document.getElementById('p_barcode_svg'); wrap.innerHTML='';
+      if(data){ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'); wrap.appendChild(svg);
+        try{JsBarcode(svg,data,{format:'CODE128',displayValue:false,margin:0,height:64});}catch(e){}
+        document.getElementById('p_barcode_num').textContent=data;
+      }else{ document.getElementById('p_barcode_num').textContent=''; }
+    }
+
+    (function(){
+      const _print=window.print.bind(window);
+      window.print=()=>{ fillPrint(); saveLastInvNo(invnoEl.value); _print(); };
+      window.addEventListener('beforeprint', fillPrint);
+      window.addEventListener('afterprint', ()=>saveLastInvNo(invnoEl.value));
+    })();
+
+    /* Juokseva laskunumero */
+    const companyKey='default';
+    function lsKeyInv(){ return `invno_last:${companyKey}`; }
+    function readLastInv(){ const v=localStorage.getItem(lsKeyInv()); const n=parseInt(v,10); return isNaN(n)?null:n; }
+    function saveLastInvNo(n){ const num=parseInt(n,10); if(!isNaN(num)) localStorage.setItem(lsKeyInv(), String(num)); }
+    function computeNextInv(start){
+      const last=readLastInv();
+      const s=parseInt(start,10);
+      if(!isNaN(last)) return last+1;
+      if(!isNaN(s)) return s;
+      return 1;
+    }
+
+    /* --- YRITYSTIETOJEN LUKU LOCALSTORAGESTA --- */
+    function normalizeFromLS(j){
+      if(!j) return null;
+      const d = (j.default || j);
+      // tue sekä uutta että vanhaa avainkirjoa
+      const street = d.osoite || d.street || '';
+      let zip = d.posti || d.zip || '';
+      let city = d.kaupunki || d.city || '';
+      // fallback vanhasta yhdistetystä "compaddr"/osoiterivistä
+      if((!zip || !city) && d.compaddr){
+        const lines = String(d.compaddr).split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+        if(lines[1]){
+          const m = lines[1].match(/^(\d{3,5})\s+(.*)$/);
+          if(m){ zip=m[1]; city=m[2]; }
+        }
+      }
+      return {
+        name:       d.nimi || d.name || '',
+        businessId: d.ytunnus || d.yt || d.businessId || '',
+        phone:      d.puh || d.phone || '',
+        street, zip, city,
+        www:        d.www || '',
+        email:      d.email || '',
+        iban:       d.iban || '',
+        bic:        d.bic || '',
+        bank:       d.bank || '',
+        logo:       d.logo || '',
+        invoiceStart: d.invoiceStart || d.laskunAloitus || d.laskunNumeroAloitus || ''
+      };
+    }
+    function fillCompanyFields(d){
+      const set=(id,val)=>{ const el=document.getElementById(id); if(el && !el.value && val!=null) el.value=val; };
+      set('compname',d.name);
+      set('businessid',d.businessId);
+      set('co_www',d.www);
+      set('co_email',d.email);
+      set('iban',d.iban);
+      set('bic',d.bic);
+      set('bank',d.bank);
+      if(!compstreet.value) compstreet.value = d.street || '';
+      if(!compzip.value)    compzip.value    = d.zip    || '';
+      if(!compcity.value)   compcity.value   = d.city   || '';
+      composeCompanyAddress();
+      const next=computeNextInv(d.invoiceStart);
+      if(!invnoEl.value && next) invnoEl.value=String(next);
+    }
+    (function loadCompany(){
+      try{
+        const raw = localStorage.getItem('yritys_tiedot');
+        if(raw){ const d=normalizeFromLS(JSON.parse(raw)); if(d){ fillCompanyFields(d); } }
+      }catch(_){}
+    })();
+
+    /* Init */
+    document.addEventListener('DOMContentLoaded', ()=>{
+      if(!termsDays.value) termsDays.value=14;
+      updateDue();
+      recalc();
+      composeCompanyAddress();
+    });
+
+    /* Kosmetiikka: pidä printtilaskun numero synkassa */
+    invnoEl.addEventListener('input', ()=>{ const p=document.getElementById('p_invno'); if(p) p.textContent=invnoEl.value; });
+
+    /* SULJE-nappi automaattisesti jos ei ole */
+    (function(){
+      const HOME='yritys.html';
+      function safeClose(){
+        const isStandalone=(window.matchMedia&&(window.matchMedia('(display-mode: standalone)').matches||window.matchMedia('(display-mode: minimal-ui)').matches));
+        if(window.opener||window.name||isStandalone){ try{window.close();return;}catch(_){} }
+        if(history.length>1){ history.back(); return; }
+        const base=location.href.slice(0,location.href.lastIndexOf('/')+1);
+        location.href=base+HOME;
+      }
+      function attach(){
+        const existing=document.querySelector('[data-action="close"], .btn-close, #btnClose, #closeBtn');
+        if(existing){ existing.addEventListener('click',safeClose); return; }
+        const btn=document.createElement('button'); btn.textContent='Sulje'; btn.className='btn s'; btn.style.marginTop='12px';
+        (document.querySelector('.container')||document.body).appendChild(btn);
+        btn.addEventListener('click',safeClose);
+      }
+      if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',attach); else attach();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Yrityksen tiedot</title>
+<style>
+  :root{ --blue:#0A66FF; --black:#000; }
+  *{ box-sizing:border-box }
+  body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica; background:#fff; color:#111; }
+  header{ display:flex; align-items:center; gap:10px; background:var(--blue); color:#fff; padding:14px 16px; }
+  header .brand{ font-size:20px; font-weight:800; text-shadow:1px 1px var(--black) }
+  header .company{ margin-left:auto; font-weight:700; text-shadow:1px 1px var(--black) }
+  .wrap{ padding:22px; max-width:720px; margin:0 auto; }
+  .card{ border:1px solid var(--black); border-radius:16px; padding:18px; background:#fff; }
+  label{ display:block; margin:10px 0 6px; color:var(--blue); font-weight:700; text-shadow:1px 1px var(--black) }
+  input,button{ width:100%; border:1px solid var(--black); border-radius:12px; padding:12px; font-size:16px; background:#fff; }
+  .row{ display:grid; grid-template-columns:1fr 1fr; gap:10px }
+  @media (max-width:560px){ .row{ grid-template-columns:1fr } }
+  .actions{ display:flex; gap:10px; flex-wrap:wrap; margin-top:14px }
+  .btn{ padding:14px; font-weight:800; border-radius:12px; cursor:pointer; }
+  .primary{ background:var(--blue); color:#fff; text-shadow:1px 1px var(--black) }
+  .secondary{ background:#F4F6FA; color:var(--blue) }
+  .muted{ color:#6b7280; font-size:12px; margin-top:6px }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">Yrityksen tiedot</div>
+    <div class="company" id="companyName">Yritys</div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <label for="nimi">Yrityksen nimi</label>
+      <input id="nimi" type="text" placeholder="Esim. Oy Esimerkki Ab">
+
+      <div class="row">
+        <div>
+          <label for="ytunnus">Y-tunnus</label>
+          <input id="ytunnus" type="text" placeholder="1234567-8">
+        </div>
+        <div>
+          <label for="vatid">ALV-numero</label>
+          <input id="vatid" type="text" placeholder="FI12345678">
+        </div>
+      </div>
+
+      <label for="osoite">Katuosoite</label>
+      <input id="osoite" type="text" placeholder="Katutie 1 A 2">
+
+      <!-- ZIP JA KAUPUNKI ERIKSEEN -->
+      <div class="row">
+        <div>
+          <label for="posti">Postinumero</label>
+          <input id="posti" type="text" inputmode="numeric" placeholder="00100">
+        </div>
+        <div>
+          <label for="kaupunki">Postitoimipaikka</label>
+          <input id="kaupunki" type="text" placeholder="Helsinki">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="puh">Puhelin</label>
+          <input id="puh" type="text" placeholder="+358 40 123 4567">
+        </div>
+        <div>
+          <label for="email">Sähköposti</label>
+          <input id="email" type="email" placeholder="info@yritys.fi">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="www">WWW</label>
+          <input id="www" type="url" placeholder="https://www.yritys.fi">
+        </div>
+        <div>
+          <label for="logo">Logo URL</label>
+          <input id="logo" type="url" placeholder="https://…/logo.png">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="iban">IBAN</label>
+          <input id="iban" type="text" placeholder="FI00 1234 5600 0007 85">
+        </div>
+        <div>
+          <label for="bic">BIC</label>
+          <input id="bic" type="text" placeholder="NDEAFIHH">
+        </div>
+      </div>
+
+      <label for="bank">Pankki</label>
+      <input id="bank" type="text" placeholder="Nordea / OP / S-Pankki …">
+
+      <div class="actions">
+        <button class="btn primary" id="saveBtn">Tallenna</button>
+        <button class="btn secondary" id="clearBtn">Tyhjennä kentät</button>
+        <button class="btn secondary" id="closeBtn">Sulje</button>
+      </div>
+
+      <div class="muted">
+        Tallennus tehdään selaimeen avaimella <code>yritys_tiedot</code>.  
+        Muut sivut (lasku, tuntihallinta, raportit…) lukevat tiedot suoraan tästä.
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const KEY = 'yritys_tiedot';
+
+  const $ = id => document.getElementById(id);
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(KEY);
+      if(!raw) return null;
+      return JSON.parse(raw);
+    }catch(_){ return null; }
+  }
+
+  function save(){
+    const data = {
+      // Pääavaimet, joita muut sivut jo hyödyntävät
+      nimi:     $('nimi').value.trim(),
+      ytunnus:  $('ytunnus').value.trim(),
+      vatid:    $('vatid').value.trim(),
+
+      // Osoite erillisinä sekä yhteenvetona yhteensopivuuden vuoksi
+      osoite:   $('osoite').value.trim(),
+      posti:    $('posti').value.trim(),
+      kaupunki: $('kaupunki').value.trim(),
+
+      // Yhteystiedot
+      puh:   $('puh').value.trim(),
+      email: $('email').value.trim(),
+      www:   $('www').value.trim(),
+
+      // Pankkitiedot
+      iban: $('iban').value.trim(),
+      bic:  $('bic').value.trim(),
+      bank: $('bank').value.trim(),
+
+      // Logo
+      logo: $('logo').value.trim()
+    };
+
+    localStorage.setItem(KEY, JSON.stringify(data));
+    refreshHeaderName();
+    alert('Tallennettu.');
+  }
+
+  function fill(d){
+    if(!d) return;
+    $('nimi').value     = d.nimi     || '';
+    $('ytunnus').value  = d.ytunnus  || d.yt || '';
+    $('vatid').value    = d.vatid    || '';
+    $('osoite').value   = d.osoite   || '';
+    $('posti').value    = d.posti    || '';
+    $('kaupunki').value = d.kaupunki || '';
+    $('puh').value      = d.puh      || '';
+    $('email').value    = d.email    || '';
+    $('www').value      = d.www      || '';
+    $('iban').value     = d.iban     || '';
+    $('bic').value      = d.bic      || '';
+    $('bank').value     = d.bank     || '';
+    $('logo').value     = d.logo     || '';
+  }
+
+  function refreshHeaderName(){
+    const d = load();
+    $('companyName').textContent = (d && d.nimi) ? d.nimi : 'Yritys';
+  }
+
+  function clearFields(){
+    document.querySelectorAll('input').forEach(i=> i.value='');
+    refreshHeaderName();
+  }
+
+  function safeClose(){
+    // Jos avattu erillisenä ikkunana tai PWA:na
+    const standalone = (window.matchMedia &&
+      (window.matchMedia('(display-mode: standalone)').matches ||
+       window.matchMedia('(display-mode: minimal-ui)').matches));
+    if (window.opener || window.name || standalone) {
+      try { window.close(); return; } catch(_) {}
+    }
+    if (history.length > 1) { history.back(); return; }
+    // Muuten palaa etusivulle
+    const base = location.href.slice(0, location.href.lastIndexOf('/') + 1);
+    location.href = base + 'yritys.html';
+  }
+
+  // Hookit
+  $('saveBtn').addEventListener('click', save);
+  $('clearBtn').addEventListener('click', clearFields);
+  $('closeBtn').addEventListener('click', safeClose);
+
+  // Init
+  fill(load());
+  refreshHeaderName();
+})();
+</script>
+</body>
+</html>

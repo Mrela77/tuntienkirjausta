@@ -1,0 +1,23 @@
+{
+  "name": "Yritysportaali",
+  "short_name": "Yritys",
+  "start_url": "./yritys.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0A66FF",
+  "icons": [
+    {
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAQAAABmP5LxAAAACXBIWXMAAAsSAAALEgHS3X78AAABcUlEQVR4nO3UsQ3CMBRE0W0zJwz0G0c9d4B0m0kGq4r7lCwY6oJ5kU6PpKqQm4z8bK1r+QHAAAAAAAAAAAA2Kn2m5f3dWl5qQq6m7k+5wzJg8Q7m9rQG3lqgQw3xq3b7w6l1YvJm3b7m3t4v9zQG9Zb0mNwqg5b3vKqf2cQKqv2G1Vqv2cQKqv2G1Vqv2cQKqv2G1Vqv2cQKqv2G1Vqv2cQKqv2G1Vqv2cQKqv2G1Vqv2cQKqv2G1Vqv2cQKr9l9b8m9f3Wv7p0h3o86f3v1v7q0AAAAAAAAAAAAAABb4B3p8w2wq3K4AAAAAElFTkSuQmCC",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAQAAADc5+XKAAAACXBIWXMAAAsSAAALEgHS3X78AAABf0lEQVR4nO3UsQ3CMBRE0W0zJwz0G0c9d4B0m0kGq4r7lCwY6oJ5kU6PpKqQm4z8bK1r+QHAAAAAAAAAAAA2Kn2m5f3dWl5qQq6m7k+5wzJg8Q7m9rQG3lqgQw3xq3b7w6l1YvJm3b7m3t4v9zQG9Zb0mNwqg5b3vKqf2cQKqv2G1Vqv2cQKqv2G1Vqv2cQKqv2G1Vqv2cQKqv2G1Vqv2cQKqv2G1Vqv2cQKqv2G1Vqv2cQKqv2G1Vqv2cQKqv2G1Vqv2cQKr9l9b8m9f3Wv7p0h3o86f3v1v7q0AAAAAAAAAAAAAABb4B6w7d7tqk2mCAAAAABJRU5ErkJggg==",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

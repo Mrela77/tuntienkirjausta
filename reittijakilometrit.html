@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Matkamittari</title>
+<style>
+  :root{ --blue:#0A66FF; --black:#000; }
+  *{ box-sizing:border-box }
+  body{ margin:0; padding:16px; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica; color:#111; background:#fff; }
+  h1{ margin:0 0 12px; font-size:28px; color:var(--blue); text-shadow:1px 1px var(--black); }
+  h2{ margin:18px 0 8px; font-size:20px; color:var(--blue); text-shadow:1px 1px var(--black); }
+  button{ width:100%; padding:14px; margin:10px 0; font-size:18px; border-radius:14px; border:1px solid var(--black); cursor:pointer; }
+  .primary{ background:var(--blue); color:#fff; font-weight:700; text-shadow:1px 1px var(--black) }
+  .secondary{ background:#F4F6FA; color:var(--blue); font-weight:700 }
+  .muted{ color:#6b7280; font-size:13px; margin-top:8px }
+  .card{ border:1px solid var(--black); border-radius:14px; padding:12px; margin-top:12px; background:#fff }
+  .row{ margin:4px 0 }
+  b{ color:#0A66FF }
+  .actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px }
+  .actions > button{ flex:1 1 120px; margin:0 }
+
+  /* Puskuri-hallinta (alapaneeli) */
+  .modal{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:flex-end; z-index:9999; }
+  .modal.show{ display:flex; }
+  .sheet{ width:100%; max-height:85vh; overflow:auto; background:#fff; border-top-left-radius:16px; border-top-right-radius:16px; border:1px solid var(--black); padding:12px; }
+  .sheet h3{ margin:4px 0 8px; color:var(--blue); text-shadow:1px 1px var(--black); }
+  .list-row{ display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #eee; }
+  .list-row small{ color:#666 }
+  .sheet .toolbar{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px }
+  .pill{ display:inline-block; padding:2px 8px; border:1px solid #ddd; border-radius:999px; font-size:12px; color:#333; }
+</style>
+</head>
+<body>
+  <h1>Matkamittari</h1>
+
+  <button id="startBtn" class="primary">Lähtö</button>
+  <button id="arriveBtn" class="secondary">Kohteessa</button>
+
+  <!-- UUSI NAPPI: Kohde (avaa Maps) -->
+  <button id="chooseDestBtn" class="secondary">Kohde (avaa Maps)</button>
+
+  <button id="mapsBtn" class="secondary">Avaa reitti Google Mapsissa</button>
+  <button id="saveTripBtn" class="secondary">Tallenna matka (CSV)</button>
+
+  <!-- Excel-vienti kuten tuntikirjauksessa -->
+  <button id="exportXlsxBtnTrips" class="secondary">Tallenna Matkat.xlsx (vain uudet)</button>
+  <!-- UUSI: erillinen excel-puskurin hallinta -->
+  <button id="manageBufferBtn" class="secondary">Hallinnoi Excel-puskuria</button>
+
+  <!-- NAPPI: avaa Phlox Simple HTTP Server -->
+  <button id="openServerBtn" class="secondary">Käynnistä Simple HTTP Server</button>
+
+  <button id="resetBtn" class="secondary">Nollaa</button>
+
+  <div class="card" id="info">
+    <div class="row"><b>Lähtö:</b> <span id="startTxt">ei vielä asetettu</span></div>
+    <div class="row"><b>Kohde:</b> <span id="endTxt">–</span></div>
+    <div class="row"><b>Matka (GPS-seurattu):</b> <span id="distTxt">–</span></div>
+    <div class="row"><b>Pisteitä:</b> <span id="ptsTxt">0</span></div>
+    <div class="row"><b>Viimeisin tarkkuus:</b> <span id="accTxt">–</span></div>
+  </div>
+
+  <div class="muted" id="status">Valmis. Varmista että avaat tämän sivun localhostista/https:stä.</div>
+
+  <h2>Merkinnät</h2>
+  <div id="tripList"><div class="muted">Ei merkintöjä vielä.</div></div>
+
+  <!-- PUSKURIHALLINTA: alapaneeli -->
+  <div id="bufferModal" class="modal" aria-hidden="true">
+    <div class="sheet">
+      <h3>Excel-puskuri</h3>
+      <div class="muted" id="bufferHint">Näet alla kaikki merkinnät joita ei ole vielä viety Exceliin.</div>
+      <div id="bufferList" style="margin-top:8px;"></div>
+      <div style="margin-top:8px;"><span class="pill" id="bufferCount">0 valittuna</span></div>
+      <div class="toolbar">
+        <button id="selectAllBtn" class="secondary">Valitse kaikki</button>
+        <button id="clearSelBtn" class="secondary">Tyhjennä valinnat</button>
+        <button id="deleteSelBtn" class="secondary" style="background:#FFE6E6;color:#E11D48;border-color:#E11D48">Poista valitut puskurista</button>
+        <button id="exportBufferXlsxBtn" class="secondary">Luo Puskuri.xlsx (vain valitut)</button>
+        <button id="exportSelectedToFinalBtn" class="primary">Vie valitut Matkat.xlsx</button>
+        <button id="closeBufferBtn" class="secondary">Sulje</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const statusEl = $('status'), startTxt=$('startTxt'), endTxt=$('endTxt'),
+        distTxt=$('distTxt'), ptsTxt=$('ptsTxt'), accTxt=$('accTxt');
+  const tripList = $('tripList');
+  const tripKey = 'matkamittari_trips_v1';
+
+  // ---------- Tallennettujen matkojen apurit ----------
+  function tripsLoad(){ try{ return JSON.parse(localStorage.getItem(tripKey)||'[]'); }catch(_){ return []; } }
+  function tripsSave(arr){ localStorage.setItem(tripKey, JSON.stringify(arr)); }
+  function addTrip(trip){ const arr=tripsLoad(); arr.push(trip); tripsSave(arr); renderTrips(); }
+  function deleteTrip(id){ const arr=tripsLoad().filter(t=>t.id!==id); tripsSave(arr); renderTrips(); }
+
+  function renderTrips(){
+    const items = tripsLoad().slice().sort((a,b)=> (b.start_ts||0)-(a.start_ts||0));
+    tripList.innerHTML='';
+    if(!items.length){ tripList.innerHTML = '<div class="muted">Ei merkintöjä vielä.</div>'; return; }
+    items.forEach(t=>{
+      const el = document.createElement('div');
+      el.className='card';
+      const km = (t.distance_m/1000).toFixed(2);
+      el.innerHTML = `
+        <div style="font-weight:700;color:var(--blue);text-shadow:1px 1px var(--black)">
+          ${new Date(t.start_ts).toLocaleString()} · ${km} km ${t.exported_at?'· viety: '+t.exported_at:''}
+        </div>
+        <div class="row">Alku: ${t.start_lat.toFixed(5)}, ${t.start_lon.toFixed(5)}</div>
+        <div class="row">Loppu: ${t.end_lat.toFixed(5)}, ${t.end_lon.toFixed(5)}</div>
+        <div class="row">Pisteitä: ${t.points}</div>
+        <div class="actions">
+          <button data-act="maps" data-id="${t.id}" class="secondary">Avaa Maps</button>
+          <button data-act="csv" data-id="${t.id}" class="secondary">Vie CSV</button>
+          <button data-act="del" data-id="${t.id}" style="background:#FFE6E6;color:#E11D48;border-color:#E11D48">Poista</button>
+        </div>
+      `;
+      tripList.appendChild(el);
+    });
+  }
+
+  tripList.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button[data-act]');
+    if(!btn) return;
+    const id = btn.getAttribute('data-id');
+    const act = btn.getAttribute('data-act');
+    const t = tripsLoad().find(x=>x.id===id);
+    if(!t) return;
+
+    if(act==='del'){
+      if(confirm('Poistetaanko merkintä?')) deleteTrip(id);
+    }else if(act==='maps'){
+      const url = `https://www.google.com/maps/dir/?api=1&origin=${t.start_lat},${t.start_lon}&destination=${t.end_lat},${t.end_lon}&travelmode=driving`;
+      window.open(url,'_blank');
+    }else if(act==='csv'){
+      exportTripCSV(t);
+    }
+  });
+
+  // ---------- Reaaliaikainen mittaus ----------
+  let watchId = null;
+  let path = [];          // {lat, lon, ts, acc}
+  let totalMeters = 0;
+  let start = null;       // {lat, lon, ts}
+  let end = null;         // {lat, lon, ts}
+
+  function fmtLatLon(lat, lon){ return lat.toFixed(5)+", "+lon.toFixed(5); }
+  function fmtKm(m){ return (m/1000).toFixed(2)+" km"; }
+  function fmtLocal(ts){ return new Date(ts).toLocaleString(); }
+  function yyyymmdd(ts){ const d=new Date(ts),p=n=>String(n).padStart(2,'0'); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+  function yyyymmdd_hhmm(ts){ const d=new Date(ts),p=n=>String(n).padStart(2,'0'); return yyyymmdd(ts)+" "+p(d.getHours())+":"+p(d.getMinutes()); }
+  function yyyymmdd_hhmmss(ts){ const d=new Date(ts),p=n=>String(n).padStart(2,'0'); return yyyymmdd(ts)+"_"+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds()); }
+  function todayStr(){ return yyyymmdd(Date.now()); }
+  function hav(lat1, lon1, lat2, lon2){
+    const R=6371000, toRad=d=>d*Math.PI/180;
+    const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+    return 2*R*Math.asin(Math.sqrt(Math.pow(a, 0.5)));
+  }
+  function setStatus(msg){ statusEl.textContent = msg; }
+
+  function onPos(pos){
+    const { latitude:lat, longitude:lon, accuracy:acc } = pos.coords;
+    const ts = pos.timestamp || Date.now();
+    accTxt.textContent = Math.round(acc) + " m";
+    if (acc > 100){ setStatus("Hyvin epätarkka piste ohitettu ("+Math.round(acc)+" m)"); return; }
+
+    const point = {lat, lon, ts, acc};
+    if (!start){ start = point; startTxt.textContent = fmtLatLon(lat, lon); }
+    if (path.length){
+      const prev = path[path.length-1];
+      const d = hav(prev.lat, prev.lon, lat, lon);
+      if (d >= 3 && d <= 2000) totalMeters += d;
+    }
+    path.push(point);
+    ptsTxt.textContent = String(path.length);
+    distTxt.textContent = fmtKm(totalMeters);
+    setStatus("Seuranta käynnissä…");
+  }
+
+  function onErr(err){
+    setStatus("Sijainnin haku epäonnistui: " + (err && err.message ? err.message : err));
+    alert("Sijainnin haku epäonnistui: " + (err && err.message ? err.message : err));
+  }
+
+  function startTracking(){
+    if (!navigator.geolocation){ alert("Geolocation ei ole käytettävissä tässä selaimessa."); return; }
+    reset(false);
+    setStatus("Pyydetään sijaintilupaa…");
+    watchId = navigator.geolocation.watchPosition(onPos, onErr, {
+      enableHighAccuracy:true, maximumAge:5000, timeout:20000
+    });
+  }
+
+  function stopTracking(){
+    if (watchId!=null){ navigator.geolocation.clearWatch(watchId); watchId=null; }
+    end = path.length ? path[path.length-1] : start;
+    if (end){ endTxt.textContent = fmtLatLon(end.lat, end.lon); }
+    setStatus("Seuranta pysäytetty.");
+  }
+
+  function openMaps(){
+    if (!start || !end){ alert("Aseta ensin Lähtö ja Kohde."); return; }
+    const origin = `${start.lat},${start.lon}`;
+    const dest   = `${end.lat},${end.lon}`;
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}&travelmode=driving`;
+    window.open(url, '_blank');
+  }
+
+  function reset(showMsg=true){
+    if (watchId!=null){ navigator.geolocation.clearWatch(watchId); watchId=null; }
+    path=[]; totalMeters=0; start=null; end=null;
+    startTxt.textContent="ei vielä asetettu"; endTxt.textContent="–";
+    distTxt.textContent="–"; ptsTxt.textContent="0"; accTxt.textContent="–";
+    if (showMsg) setStatus("Tyhjennetty.");
+  }
+
+  // ---------- UUSI: Kohde (avaa Maps) – anna käyttäjän valita määränpää ja reitti ----------
+  function openMapsPicker(){
+    try {
+      if (start && start.lat && start.lon){
+        // Reittitila: lähtöpiste valmiina, käyttäjä valitsee määränpään
+        const origin = `${start.lat},${start.lon}`;
+        const url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&travelmode=driving`;
+        window.open(url, '_blank');
+        return;
+      }
+    } catch(_) {}
+    // Jos lähtöä ei ole, avaa hakunäkymä (yrittää ensin appilla, sitten web)
+    try { location.href = 'geo:0,0?q='; }
+    catch(_){ window.open('https://www.google.com/maps/search/', '_blank'); }
+  }
+
+  // ---------- TALLENNUS (CSV + localStorage merkintä) ----------
+  function exportTripCSV(trip){
+    const header = "Aloitusaika;Lopetusaika;Matka_km;Pisteitä;Alku_lat;Alku_lon;Loppu_lat;Loppu_lon";
+    const row = [
+      new Date(trip.start_ts).toLocaleString(),
+      new Date(trip.end_ts).toLocaleString(),
+      (trip.distance_m/1000).toFixed(3),
+      trip.points,
+      trip.start_lat.toFixed(6), trip.start_lon.toFixed(6),
+      trip.end_lat.toFixed(6),   trip.end_lon.toFixed(6)
+    ].join(";");
+    const csv = header + "\n" + row + "\n";
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "matka_" + yyyymmdd_hhmmss(trip.start_ts) + ".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1500);
+  }
+
+  function saveTripCSV(){
+    if (watchId!=null) stopTracking();
+    if (!start){ alert("Et ole aloittanut mittausta."); return; }
+    if (!end){ end = path.length ? path[path.length-1] : start; }
+
+    const trip = {
+      id: 't_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+      start_ts: start.ts || Date.now(),
+      end_ts:   end.ts   || Date.now(),
+      distance_m: Math.round(totalMeters),
+      points: path.length,
+      start_lat: start.lat, start_lon: start.lon,
+      end_lat: end.lat,     end_lon: end.lon,
+      exported_at: null
+    };
+
+    addTrip(trip);
+    exportTripCSV(trip);
+    setStatus("Matka tallennettu ja viety CSV:ksi.");
+  }
+
+  // Kytkennät perustoimintoihin
+  $('startBtn').addEventListener('click', startTracking);
+  $('arriveBtn').addEventListener('click', stopTracking);
+  $('mapsBtn').addEventListener('click', openMaps);
+  $('chooseDestBtn').addEventListener('click', openMapsPicker); // UUSI
+  $('saveTripBtn').addEventListener('click', saveTripCSV);
+  $('resetBtn').addEventListener('click', reset);
+
+  if (location.protocol==='file:' || location.href.startsWith('content://')){
+    setStatus("Vinkki: käytä localhost/https jotta sijaintilupa toimii varmasti.");
+  }
+
+  // ---------- XLSX-vienti (ja apufunktiot) ----------
+  function xmlEscape(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;'); }
+  function utf8enc(str){ if(window.TextEncoder){ return new TextEncoder().encode(str); } var out=[],i,c; for(i=0;i<str.length;i++){ c=str.charCodeAt(i); if(c<128) out.push(c); else if(c<2048){ out.push(192|(c>>6), 128|(c&63)); } else if((c&0xFC00)==0xD800 && i+1<str.length && (str.charCodeAt(i+1)&0xFC00)==0xDC00){ c=0x10000+((c&0x3FF)<<10)+(str.charCodeAt(++i)&0x3FF); out.push(240|(c>>18),128|((c>>12)&63),128|((c>>6)&63),128|(c&63)); } else { out.push(224|(c>>12),128|((c>>6)&63),128|(c&63)); } } return new Uint8Array(out); }
+  function u16le(n){ return new Uint8Array([n&255,(n>>8)&255]); }
+  function u32le(n){ return new Uint8Array([n&255,(n>>8)&255,(n>>16)&255,(n>>24)&255]); }
+  var CRC_TABLE=(function(){ var t=[],i,k,c; for(i=0;i<256;i++){ c=i; for(k=0;k<8;k++){ c = (c&1)?(0xEDB88320^(c>>>1)):(c>>>1); } t[i]=c>>>0; } return t; })();
+  function crc32(bytes){ var c=~0>>>0,i; for(i=0;i<bytes.length;i++){ c = (c>>>8) ^ CRC_TABLE[(c ^ bytes[i]) & 0xFF]; } return (~c)>>>0; }
+  function dosTimeDate(d){ var t=d||new Date(); var time=((t.getHours()<<11)|(t.getMinutes()<<5)|((t.getSeconds()/2)|0))>>>0; var date=(((t.getFullYear()-1980)<<9)|((t.getMonth()+1)<<5)|t.getDate())>>>0; return {time:time,date:date}; }
+  function concat(arrs){ var len=0,i; for(i=0;i<arrs.length;i++) len+=arrs[i].length; var out=new Uint8Array(len),off=0; for(i=0;i<arrs.length;i++){ out.set(arrs[i],off); off+=arrs[i].length; } return out; }
+  function makeZip(files){ var chunks=[],central=[],offset=0,dd=dosTimeDate(new Date()),i; for(i=0;i<files.length;i++){ var nameBytes=utf8enc(files[i].name); var data=files[i].data; var crc=crc32(data); var comp=data; var local = concat([ u32le(0x04034b50), u16le(20), u16le(0), u16le(0), u16le(dd.time), u16le(dd.date), u32le(crc), u32le(comp.length>>>0), u32le(data.length>>>0), u16le(nameBytes.length), u16le(0), nameBytes, comp ]); chunks.push(local); var centralHdr = concat([ u32le(0x02014b50), u16le(20), u16le(20), u16le(0), u16le(0), u16le(dd.time), u16le(dd.date), u32le(crc), u32le(comp.length>>>0), u32le(data.length>>>0), u16le(nameBytes.length), u16le(0), u16le(0), u16le(0), u16le(0), u32le(0), u32le(offset>>>0), nameBytes ]); central.push(centralHdr); offset += local.length; } var centralBlob = concat(central); var partsBlob = concat(chunks); var end = concat([ u32le(0x06054b50), u16le(0), u16le(0), u16le(files.length), u16le(files.length), u32le(centralBlob.length>>>0), u32le(partsBlob.length>>>0), u16le(0) ]); return concat([ partsBlob, centralBlob, end ]); }
+  function colLetters(n){ var s=''; n++; while(n>0){ var m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
+  function buildSheetXml(matrix){
+    var rows=[],r,c,cells,v,ref;
+    for(r=0;r<matrix.length;r++){
+      cells=[];
+      for(c=0;c<matrix[r].length;c++){
+        v=matrix[r][c]; ref=colLetters(c)+(r+1);
+        if(v===null||v===undefined||v===''){ continue; }
+        if(typeof v==='number'){ cells.push('<c r="'+ref+'"><v>'+String(v)+'</v></c>'); }
+        else { cells.push('<c r="'+ref+'" t="inlineStr"><is><t>'+xmlEscape(String(v))+'</t></is></c>'); }
+      }
+      rows.push('<row r="'+(r+1)+'">'+cells.join('')+'</row>');
+    }
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'+rows.join('')+'</sheetData></worksheet>';
+  }
+  function buildWorkbookXml(sheetName){ return '<?xml version="1.0" encoding="UTF-8"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="'+sheetName+'" sheetId="1" r:id="rId1"/></sheets></workbook>'; }
+  function buildWorkbookRels(){ return '<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'; }
+  function buildRootRels(){ return '<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'; }
+  function buildContentTypes(){ return '<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'; }
+
+  async function exportTripsXLSX(){
+    try{
+      const items = tripsLoad() || [];
+      const toExport = [], ids=[];
+      for (let i=0;i<items.length;i++){ if(!items[i].exported_at){ toExport.push(items[i]); ids.push(items[i].id); } }
+      if(!toExport.length){ alert('Ei uusia vientejä'); return; }
+
+      const allForFile = items.slice().sort((a,b)=> (a.start_ts||0)-(b.start_ts||0));
+      const data = [];
+      data.push(['Päivä','Lähtö','Loppu','Matka (km)','Pisteitä','Alku lat','Alku lon','Loppu lat','Loppu lon']);
+      for (let i=0;i<allForFile.length;i++){
+        const t = allForFile[i];
+        const km = Number((t.distance_m/1000).toFixed(3));
+        data.push([ yyyymmdd(t.start_ts), yyyymmdd_hhmm(t.start_ts), yyyymmdd_hhmm(t.end_ts),
+          km, t.points||0,
+          t.start_lat!=null?Number(t.start_lat):'',
+          t.start_lon!=null?Number(t.start_lon):'',
+          t.end_lat!=null?Number(t.end_lat):'',
+          t.end_lon!=null?Number(t.end_lon):'' ]);
+      }
+
+      const files = [
+        {name:'[Content_Types].xml', data:utf8enc(buildContentTypes())},
+        {name:'_rels/.rels', data:utf8enc(buildRootRels())},
+        {name:'xl/workbook.xml', data:utf8enc(buildWorkbookXml('Matkat'))},
+        {name:'xl/_rels/workbook.xml.rels', data:utf8enc(buildWorkbookRels())},
+        {name:'xl/worksheets/sheet1.xml', data:utf8enc(buildSheetXml(data))}
+      ];
+      const zipBytes = makeZip(files);
+      const blob = new Blob([zipBytes], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+
+      // 1) File System Access -> samaan tiedostoon
+      let delivered=false;
+      try{
+        if('showSaveFilePicker' in window){
+          if(!window.__matkatHandle){
+            window.__matkatHandle = await window.showSaveFilePicker({
+              suggestedName:'Matkat.xlsx',
+              types:[{description:'Excel-työkirja', accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']}}]
+            });
+          }
+          const w = await window.__matkatHandle.createWritable();
+          await w.write(blob); await w.close();
+          delivered = true;
+        }
+      }catch(_){}
+
+      // 2) Lataus fallback
+      if(!delivered){
+        const a=document.createElement('a'); const url=URL.createObjectURL(blob);
+        a.href=url; a.download='Matkat.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(url), 1500);
+      }
+
+      // Merkitse juuri viedyiksi
+      const stamp = todayStr();
+      for (let i=0;i<items.length;i++){ if(ids.indexOf(items[i].id)!==-1){ items[i].exported_at = stamp; } }
+      tripsSave(items);
+      renderTrips();
+      setStatus('Matkat.xlsx tallennettu/avattu');
+    }catch(e){
+      alert('Vienti epäonnistui: '+(e && e.message ? e.message : e));
+    }
+  }
+  $('exportXlsxBtnTrips').addEventListener('click', exportTripsXLSX);
+
+  // ------- PUSKURIHALLINTA -------
+  const modal = $('bufferModal');
+  const bufferList = $('bufferList');
+  const bufferCount = $('bufferCount');
+  let selected = new Set();
+
+  function pendingTrips(){
+    return (tripsLoad()||[]).filter(t=>!t.exported_at);
+  }
+
+  function openBuffer(){
+    selected.clear();
+    renderBufferList();
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden','false');
+  }
+  function closeBuffer(){
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden','true');
+  }
+  function renderBufferList(){
+    const pend = pendingTrips();
+    bufferList.innerHTML='';
+    if(!pend.length){
+      bufferList.innerHTML = '<div class="muted">Puskuri on tyhjä – ei viemättömiä merkintöjä.</div>';
+      bufferCount.textContent = '0 valittuna';
+      return;
+    }
+    pend.forEach(t=>{
+      const row = document.createElement('label');
+      row.className='list-row';
+      const km = (t.distance_m/1000).toFixed(2);
+      row.innerHTML = `
+        <input type="checkbox" data-id="${t.id}" ${selected.has(t.id)?'checked':''} style="width:auto">
+        <div>
+          <div><b>${new Date(t.start_ts).toLocaleString()}</b> · ${km} km</div>
+          <small>${t.start_lat.toFixed(5)}, ${t.start_lon.toFixed(5)} → ${t.end_lat.toFixed(5)}, ${t.end_lon.toFixed(5)}</small>
+        </div>
+      `;
+      bufferList.appendChild(row);
+    });
+    bufferList.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+      cb.addEventListener('change', (e)=>{
+        const id = e.target.getAttribute('data-id');
+        if(e.target.checked) selected.add(id); else selected.delete(id);
+        bufferCount.textContent = selected.size+' valittuna';
+      });
+    });
+    bufferCount.textContent = selected.size+' valittuna';
+  }
+
+  $('manageBufferBtn').addEventListener('click', openBuffer);
+  $('closeBufferBtn').addEventListener('click', closeBuffer);
+  $('selectAllBtn').addEventListener('click', ()=>{
+    selected = new Set(pendingTrips().map(t=>t.id));
+    renderBufferList();
+  });
+  $('clearSelBtn').addEventListener('click', ()=>{
+    selected.clear(); renderBufferList();
+  });
+  $('deleteSelBtn').addEventListener('click', ()=>{
+    if(!selected.size){ alert('Ei valintoja.'); return; }
+    if(!confirm('Poistetaanko '+selected.size+' merkintää puskurista?')) return;
+    const keep = (tripsLoad()||[]).filter(t=> !selected.has(t.id) );
+    tripsSave(keep);
+    selected.clear();
+    renderBufferList();
+    renderTrips();
+  });
+
+  // Luo Puskuri.xlsx vain valituista (ei merkitse vietyksi)
+  $('exportBufferXlsxBtn').addEventListener('click', ()=>{
+    const all = tripsLoad()||[];
+    const sel = all.filter(t=> selected.has(t.id) );
+    if(!sel.length){ alert('Valitse ensin merkinnät.'); return; }
+    const data = [['Päivä','Lähtö','Loppu','Matka (km)','Pisteitä','Alku lat','Alku lon','Loppu lat','Loppu lon']];
+    sel.sort((a,b)=> (a.start_ts||0)-(b.start_ts||0)).forEach(t=>{
+      const km = Number((t.distance_m/1000).toFixed(3));
+      data.push([ yyyymmdd(t.start_ts), yyyymmdd_hhmm(t.start_ts), yyyymmdd_hhmm(t.end_ts),
+        km, t.points||0, t.start_lat, t.start_lon, t.end_lat, t.end_lon ]);
+    });
+    const files = [
+      {name:'[Content_Types].xml', data:utf8enc(buildContentTypes())},
+      {name:'_rels/.rels', data:utf8enc(buildRootRels())},
+      {name:'xl/workbook.xml', data:utf8enc(buildWorkbookXml('Puskuri'))},
+      {name:'xl/_rels/workbook.xml.rels', data:utf8enc(buildWorkbookRels())},
+      {name:'xl/worksheets/sheet1.xml', data:utf8enc(buildSheetXml(data))}
+    ];
+    const zipBytes = makeZip(files);
+    const blob = new Blob([zipBytes], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const a=document.createElement('a'), url=URL.createObjectURL(blob);
+    a.href=url; a.download='Puskuri.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+  });
+
+  // Vie valitut Matkat.xlsx (lisää aiemmin viedyille; merkitsee vietyiksi)
+  $('exportSelectedToFinalBtn').addEventListener('click', async ()=>{
+    const all = tripsLoad()||[];
+    const sel = new Set(selected);
+    const ids = all.filter(t=>sel.has(t.id)).map(t=>t.id);
+    if(!ids.length){ alert('Valitse ensin merkinnät.'); return; }
+
+    const finalRows = all.filter(t=> t.exported_at || sel.has(t.id) )
+                         .sort((a,b)=> (a.start_ts||0)-(b.start_ts||0));
+    const data = [['Päivä','Lähtö','Loppu','Matka (km)','Pisteitä','Alku lat','Alku lon','Loppu lat','Loppu lon']];
+    finalRows.forEach(t=>{
+      const km = Number((t.distance_m/1000).toFixed(3));
+      data.push([ yyyymmdd(t.start_ts), yyyymmdd_hhmm(t.start_ts), yyyymmdd_hhmm(t.end_ts),
+        km, t.points||0, t.start_lat, t.start_lon, t.end_lat, t.end_lon ]);
+    });
+
+    const files = [
+      {name:'[Content_Types].xml', data:utf8enc(buildContentTypes())},
+      {name:'_rels/.rels', data:utf8enc(buildRootRels())},
+      {name:'xl/workbook.xml', data:utf8enc(buildWorkbookXml('Matkat'))},
+      {name:'xl/_rels/workbook.xml.rels', data:utf8enc(buildWorkbookRels())},
+      {name:'xl/worksheets/sheet1.xml', data:utf8enc(buildSheetXml(data))}
+    ];
+    const zipBytes = makeZip(files);
+    const blob = new Blob([zipBytes], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+
+    let delivered=false;
+    try{
+      if('showSaveFilePicker' in window){
+        if(!window.__matkatHandle){
+          window.__matkatHandle = await window.showSaveFilePicker({
+            suggestedName:'Matkat.xlsx',
+            types:[{description:'Excel-työkirja', accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']}}]
+          });
+        }
+        const w = await window.__matkatHandle.createWritable();
+        await w.write(blob); await w.close();
+        delivered=true;
+      }
+    }catch(_){}
+
+    if(!delivered){
+      const a=document.createElement('a'); const url=URL.createObjectURL(blob);
+      a.href=url; a.download='Matkat.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1500);
+    }
+
+    const stamp = todayStr();
+    const updated = all.map(t=> sel.has(t.id) ? {...t, exported_at: stamp} : t);
+    tripsSave(updated);
+    selected.clear();
+    renderBufferList();
+    renderTrips();
+    setStatus('Valitut merkinnät viety Matkat.xlsx-tiedostoon');
+  });
+
+  // Piirrä aiemmat merkinnät
+  renderTrips();
+})();
+</script>
+
+<!-- Avaa nimenomaan Phlox Simple HTTP Server -->
+<script>
+(function(){
+  const PKG = 'com.phlox.simpleserver';
+  function openSimpleHttpServer(){
+    try {
+      location.href = `intent://open/#Intent;package=${PKG};end`;
+      setTimeout(()=>{
+        if (document.visibilityState === 'visible') {
+          try { location.href = `market://details?id=${PKG}`; }
+          catch(_) { location.href = `https://play.google.com/store/apps/details?id=${PKG}`; }
+        }
+      }, 1200);
+    } catch(_) {
+      try { location.href = `market://details?id=${PKG}`; }
+      catch(_) { location.href = `https://play.google.com/store/apps/details?id=${PKG}`; }
+    }
+  }
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const btn = document.getElementById('openServerBtn');
+    if(btn) btn.addEventListener('click', openSimpleHttpServer);
+  });
+})();
+</script>
+<!-- SULJE-napin yleiskoodi: lisää tämä ennen </body> -->
+<script>
+(function(){
+  // Etusivu johon palataan tarvittaessa
+  const HOME = 'yritys.html';
+
+  function safeClose(){
+    // Onko avattu app/ikkuna-tilassa tai window.open:lla?
+    const isStandalone = (window.matchMedia &&
+      (window.matchMedia('(display-mode: standalone)').matches ||
+       window.matchMedia('(display-mode: minimal-ui)').matches));
+
+    if (window.opener || window.name || isStandalone) {
+      try { window.close(); return; } catch(_) {}
+    }
+    // Onko selaushistoriaa? Palaa taakse
+    if (history.length > 1) { history.back(); return; }
+
+    // Viimeinen vaihtoehto: siirry etusivulle
+    const base = location.href.slice(0, location.href.lastIndexOf('/') + 1);
+    const url  = base + HOME + (HOME.includes('?') ? '&' : '?') + 'cb=' + Date.now();
+    location.href = url;
+  }
+
+  function attachCloseButtons(){
+    // Kiinnitä olemassa oleviin sulkunappeihin, jos niitä on:
+    const targets = document.querySelectorAll('[data-action="close"], .btn-close, #btnClose, #closeBtn');
+    if (targets.length) {
+      targets.forEach(el => el.addEventListener('click', safeClose));
+      return;
+    }
+
+    // Muussa tapauksessa LISÄÄ napin automaattisesti
+    const btn = document.createElement('button');
+    btn.textContent = 'Sulje';
+    btn.setAttribute('data-action', 'close');
+
+    // Käytä sivun omia luokkia jos ne löytyvät, muuten kevyt inlinet
+    const hasBtn = !!document.querySelector('.btn');
+    const hasSecondary = !!document.querySelector('.btn-secondary');
+    if (hasBtn) btn.classList.add('btn');
+    if (hasSecondary) btn.classList.add('btn-secondary');
+    if (!hasBtn && !hasSecondary) {
+      btn.style.cssText =
+        'width:100%;padding:12px;margin:12px 0;font-size:16px;'+
+        'border-radius:12px;border:1px solid #000;background:#F7F7F7;color:#0A66FF;font-weight:800;cursor:pointer;';
+    }
+
+    // Sijoitus: preferoi .wrap, muuten body
+    (document.querySelector('.wrap') || document.body).appendChild(btn);
+    btn.addEventListener('click', safeClose);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attachCloseButtons);
+  } else {
+    attachCloseButtons();
+  }
+})();
+</script>
+<script>
+/* ===== Portaalin teema: luku & live-päivitys (kaikki muut sivut) ===== */
+(function applySavedTheme(){
+  const THEME_KEY='portal_theme_v1';
+  function apply(vars){
+    const root=document.documentElement;
+    if(!vars) return;
+    for(const k in vars){ root.style.setProperty(k, vars[k]); }
+    root.style.setProperty('--bg',  vars['--bg']  || '#fff');
+    root.style.setProperty('--text',vars['--text']|| '#111');
+  }
+  try{
+    const saved = JSON.parse(localStorage.getItem(THEME_KEY) || 'null');
+    if(saved) apply(saved);
+  }catch(_){}
+
+  // Päivitä live, jos väri muuttuu yrityksen-tiedot-sivulla
+  window.addEventListener('storage', (e)=>{
+    if(e.key===THEME_KEY || e.key==='__theme_ping'){
+      try{ const t = JSON.parse(localStorage.getItem(THEME_KEY)||'null'); if(t) apply(t); }catch(_){}
+    }
+  });
+})();
+</script>
+<script>
+(function cleanupDevServerStuff(){
+  // 1) Poista yleisimmillä nimillä olevat napit ja säiliöt
+  const ids = [
+    'btnOpenServer','btnSimpleServer','openServerBtn','startServerBtn',
+    'openLocalServer','devServerBtn'
+  ];
+  ids.forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    // kloonaus -> poistaa mahdolliset kuuntelijat
+    const clean = el.cloneNode(true);
+    el.replaceWith(clean);
+    clean.remove(); // poista kokonaan
+  });
+
+  // 2) Poista kehityselementtejä attribuuteilla/luokilla
+  const devSelectors = [
+    '[data-role="dev-server"]',
+    '[data-dev]',
+    '.dev-server',
+    '.simple-server',
+    '[data-action="open-server"]',
+    '[data-action="simple-server"]'
+  ];
+  document.querySelectorAll(devSelectors.join(',')).forEach(el=>{
+    const clean = el.cloneNode(true);
+    el.replaceWith(clean);
+    clean.remove();
+  });
+
+  // 3) Nollaa mahdolliset funktiot jos niitä yritetään kutsua muualla
+  const fns = ['openServer','startSimpleServer','openLocalServer','runServer','launchDevServer'];
+  fns.forEach(name=>{
+    if (typeof window[name] === 'function') {
+      try { window[name] = function(){ /* poistettu */ }; } catch(_) {}
+    }
+  });
+
+  // 4) Estä mahdolliset pikanäppäimet (esim. Alt+S tai Ctrl+S tms. dev-serverille)
+  window.addEventListener('keydown', function(e){
+    const key = (e.key||'').toLowerCase();
+    if ((e.altKey || e.ctrlKey || e.metaKey) && (key === 's' || key === 'o')) {
+      // jos näppäinyhdistelmä olisi avannut serverin, pysäytetään
+      e.stopPropagation();
+    }
+  }, true);
+})();
+</script>
+</body>
+</html>
